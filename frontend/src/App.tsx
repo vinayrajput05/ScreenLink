@@ -2,12 +2,15 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Header } from './components/Header';
 import { ScreenControlCard } from './components/ScreenControlCard';
 import { ShareUrlCard } from './components/ShareUrlCard';
+import { YouTubeLiveCard } from './components/YouTubeLiveCard';
 import { PendingRequestsCard } from './components/PendingRequestsCard';
 import { ConnectedViewersCard } from './components/ConnectedViewersCard';
 import { AnnouncementCard } from './components/AnnouncementCard';
 import { QrCodeModal } from './components/QrCodeModal';
 import {
   DisplayInfo,
+  QualityPreset,
+  YouTubeStatus,
   PendingRequest,
   ConnectedViewer,
   Announcement,
@@ -18,10 +21,16 @@ import { Sparkles, Cast, CheckCircle2, AlertCircle } from 'lucide-react';
 // Import Wails runtime and bindings
 import {
   GetDisplays,
+  GetQualityPresets,
+  SetQualityPreset,
   GetSystemInfo,
   GetSharingStatus,
   StartSharing,
   StopSharing,
+  StartYouTubeStream,
+  StopYouTubeStream,
+  GetYouTubeStreamStatus,
+  IsFFmpegInstalled,
   ApproveClient,
   RejectClient,
   ApproveAll,
@@ -33,18 +42,36 @@ import {
 } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 
+const DEFAULT_PRESETS: QualityPreset[] = [
+  { id: 'hd', name: '720p HD', description: 'Smooth (24 FPS) • Low Bandwidth', maxHeight: 720, quality: 60, targetFps: 24 },
+  { id: 'fhd', name: '1080p Full HD', description: 'Balanced (20 FPS) • Recommended', maxHeight: 1080, quality: 72, targetFps: 20 },
+  { id: '2k', name: '2K / Retina', description: 'Crisp Text (18 FPS) • Code Demos', maxHeight: 1440, quality: 85, targetFps: 18 },
+  { id: '4k', name: '4K Ultra', description: 'Max Fidelity (15 FPS) • Lossless Detail', maxHeight: 2160, quality: 93, targetFps: 15 },
+];
+
 export default function App() {
   const [status, setStatus] = useState<ServerStatus>('stopped');
   const [displays, setDisplays] = useState<DisplayInfo[]>([]);
   const [selectedDisplay, setSelectedDisplay] = useState<string>('display-0');
+  const [qualityPresets, setQualityPresets] = useState<QualityPreset[]>(DEFAULT_PRESETS);
+  const [selectedQuality, setSelectedQuality] = useState<string>('fhd');
   const [ipAddresses, setIpAddresses] = useState<string[]>([]);
   const [selectedIp, setSelectedIp] = useState<string>('127.0.0.1');
   const [port, setPort] = useState<number>(8080);
+  
+  // YouTube Live State
+  const [ytStatus, setYtStatus] = useState<YouTubeStatus>({
+    status: 'offline',
+    isLive: false,
+    uptimeSeconds: 0,
+    rtmpUrl: 'rtmp://a.rtmp.youtube.com/live2',
+  });
+  const [isFFmpegInstalled, setIsFFmpegInstalled] = useState<boolean>(true);
 
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
   const [connectedViewers, setConnectedViewers] = useState<ConnectedViewer[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-
+  
   const [isQrModalOpen, setIsQrModalOpen] = useState<boolean>(false);
   const [notification, setNotification] = useState<{ msg: string; type: 'success' | 'info' | 'error' } | null>(null);
 
@@ -92,8 +119,12 @@ export default function App() {
         const running = await GetSharingStatus();
         setStatus(running ? 'running' : 'stopped');
       }
+      if (typeof GetYouTubeStreamStatus === 'function') {
+        const yt = await GetYouTubeStreamStatus();
+        if (yt) setYtStatus(yt);
+      }
     } catch (err) {
-      console.error('Failed to sync clients:', err);
+      console.error('Failed to sync state:', err);
     }
   }, [updateClientStateFromData]);
 
@@ -108,6 +139,18 @@ export default function App() {
           }
         }
 
+        if (typeof GetQualityPresets === 'function') {
+          const presets = await GetQualityPresets();
+          if (presets && presets.length > 0) {
+            setQualityPresets(presets);
+          }
+        }
+
+        if (typeof IsFFmpegInstalled === 'function') {
+          const installed = await IsFFmpegInstalled();
+          setIsFFmpegInstalled(installed);
+        }
+
         if (typeof GetSystemInfo === 'function') {
           const sys = await GetSystemInfo();
           if (sys && Array.isArray(sys.ipAddresses) && sys.ipAddresses.length > 0) {
@@ -120,6 +163,11 @@ export default function App() {
         if (typeof GetSharingStatus === 'function') {
           const isRunning = await GetSharingStatus();
           setStatus(isRunning ? 'running' : 'stopped');
+        }
+
+        if (typeof GetYouTubeStreamStatus === 'function') {
+          const yt = await GetYouTubeStreamStatus();
+          if (yt) setYtStatus(yt);
         }
 
         await syncClients();
@@ -139,6 +187,12 @@ export default function App() {
         EventsOn('server_state_changed', (payload: any) => {
           if (payload?.status) {
             setStatus(payload.status);
+          }
+        });
+
+        EventsOn('youtube_status_changed', (payload: any) => {
+          if (payload) {
+            setYtStatus(payload);
           }
         });
       }
@@ -178,6 +232,50 @@ export default function App() {
       showNotification('Screen sharing stopped', 'info');
     } catch (err: any) {
       showNotification(`Error stopping sharing: ${err?.message || err}`, 'error');
+    }
+  };
+
+  const handleStartYouTube = async (streamKey: string, rtmpServer: string) => {
+    try {
+      if (typeof StartYouTubeStream === 'function') {
+        await StartYouTubeStream(streamKey, rtmpServer);
+      }
+      showNotification('Connecting to YouTube Live...', 'info');
+    } catch (err: any) {
+      showNotification(`YouTube Live Error: ${err?.message || err}`, 'error');
+    }
+  };
+
+  const handleStopYouTube = async () => {
+    try {
+      if (typeof StopYouTubeStream === 'function') {
+        await StopYouTubeStream();
+      }
+      showNotification('YouTube live stream ended', 'info');
+    } catch (err: any) {
+      showNotification(`Error stopping YouTube stream: ${err?.message || err}`, 'error');
+    }
+  };
+
+  const handleSelectQuality = async (presetId: string) => {
+    setSelectedQuality(presetId);
+    try {
+      if (typeof SetQualityPreset === 'function') {
+        await SetQualityPreset(presetId);
+      }
+      const preset = qualityPresets.find((q) => q.id === presetId);
+      if (preset) {
+        showNotification(`Stream quality set to ${preset.name} (${preset.targetFps} FPS)`, 'info');
+      }
+    } catch (err) {
+      console.error('Quality preset error:', err);
+    }
+  };
+
+  const handleSelectDisplay = (id: string) => {
+    setSelectedDisplay(id);
+    if (typeof SelectDisplay === 'function') {
+      SelectDisplay(id);
     }
   };
 
@@ -258,13 +356,6 @@ export default function App() {
     }
   };
 
-  const handleSelectDisplay = (id: string) => {
-    setSelectedDisplay(id);
-    if (typeof SelectDisplay === 'function') {
-      SelectDisplay(id);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col selection:bg-indigo-500/30 selection:text-indigo-200">
       {/* Top Navbar */}
@@ -279,6 +370,9 @@ export default function App() {
             displays={displays}
             selectedDisplay={selectedDisplay}
             onSelectDisplay={handleSelectDisplay}
+            qualityPresets={qualityPresets}
+            selectedQuality={selectedQuality}
+            onSelectQuality={handleSelectQuality}
             onStartSharing={handleStartSharing}
             onStopSharing={handleStopSharing}
           />
@@ -290,6 +384,16 @@ export default function App() {
             selectedIp={selectedIp}
             onSelectIp={setSelectedIp}
             onShowQr={() => setIsQrModalOpen(true)}
+          />
+        </div>
+
+        {/* YouTube Live Streaming Section */}
+        <div>
+          <YouTubeLiveCard
+            status={ytStatus}
+            isFFmpegInstalled={isFFmpegInstalled}
+            onStartStream={handleStartYouTube}
+            onStopStream={handleStopYouTube}
           />
         </div>
 
@@ -325,7 +429,11 @@ export default function App() {
         <span>•</span>
         <span>LAN IP: <strong className="font-mono text-cyan-400">{selectedIp}</strong></span>
         <span>•</span>
-        <span>Host Authorization Protected</span>
+        <span>
+          YouTube Live: <strong className={ytStatus.isLive ? 'text-rose-400 font-bold' : 'text-slate-400'}>
+            {ytStatus.isLive ? '🔴 LIVE' : 'Offline'}
+          </strong>
+        </span>
       </footer>
 
       {/* Toast Notification */}

@@ -11,11 +11,17 @@ import (
 	"time"
 
 	"github.com/kbinani/screenshot"
+	"golang.org/x/image/draw"
 )
 
 type FrameBroadcaster interface {
 	BroadcastFrame(frameData []byte)
 	HasApprovedViewers() bool
+}
+
+type YouTubeFrameSink interface {
+	PushFrame(jpegData []byte)
+	IsLive() bool
 }
 
 type Display struct {
@@ -27,23 +33,82 @@ type Display struct {
 	Bounds     image.Rectangle
 }
 
+type QualityPreset struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	MaxHeight   int    `json:"maxHeight"`
+	Quality     int    `json:"quality"`
+	TargetFPS   int    `json:"targetFps"`
+}
+
 type Streamer struct {
-	displayIndex int
-	targetFPS    int
-	jpegQuality  int
-	broadcaster  FrameBroadcaster
-	cancel       context.CancelFunc
-	mu           sync.Mutex
-	isRunning    bool
-	frameID      uint64
+	displayIndex   int
+	targetFPS      int
+	jpegQuality    int
+	maxHeight      int
+	selectedPreset string
+	broadcaster    FrameBroadcaster
+	ytSink         YouTubeFrameSink
+	cancel         context.CancelFunc
+	mu             sync.Mutex
+	isRunning      bool
+	frameID        uint64
 }
 
 func NewStreamer(broadcaster FrameBroadcaster) *Streamer {
-	return &Streamer{
-		displayIndex: 0,
-		targetFPS:    18,
-		jpegQuality:  65,
-		broadcaster:  broadcaster,
+	s := &Streamer{
+		displayIndex:   0,
+		targetFPS:      20,
+		jpegQuality:    72,
+		maxHeight:      1080,
+		selectedPreset: "fhd",
+		broadcaster:    broadcaster,
+	}
+	return s
+}
+
+func (s *Streamer) SetYouTubeSink(sink YouTubeFrameSink) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ytSink = sink
+}
+
+// GetAvailableQualityPresets returns all stream quality options
+func GetAvailableQualityPresets() []QualityPreset {
+	return []QualityPreset{
+		{
+			ID:          "hd",
+			Name:        "720p HD",
+			Description: "Smooth (24 FPS) • Low Bandwidth",
+			MaxHeight:   720,
+			Quality:     60,
+			TargetFPS:   24,
+		},
+		{
+			ID:          "fhd",
+			Name:        "1080p Full HD",
+			Description: "Balanced (20 FPS) • Recommended",
+			MaxHeight:   1080,
+			Quality:     72,
+			TargetFPS:   20,
+		},
+		{
+			ID:          "2k",
+			Name:        "2K / Retina",
+			Description: "Crisp Text (18 FPS) • Code Demos",
+			MaxHeight:   1440,
+			Quality:     85,
+			TargetFPS:   18,
+		},
+		{
+			ID:          "4k",
+			Name:        "4K Ultra",
+			Description: "Max Fidelity (15 FPS) • Lossless Detail",
+			MaxHeight:   2160,
+			Quality:     93,
+			TargetFPS:   15,
+		},
 	}
 }
 
@@ -91,6 +156,31 @@ func (s *Streamer) SetDisplayIndex(idx int) {
 	s.displayIndex = idx
 }
 
+func (s *Streamer) SetQualityPreset(presetID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.selectedPreset = presetID
+	switch presetID {
+	case "hd":
+		s.maxHeight = 720
+		s.jpegQuality = 60
+		s.targetFPS = 24
+	case "2k":
+		s.maxHeight = 1440
+		s.jpegQuality = 85
+		s.targetFPS = 18
+	case "4k":
+		s.maxHeight = 2160
+		s.jpegQuality = 93
+		s.targetFPS = 15
+	default: // "fhd"
+		s.maxHeight = 1080
+		s.jpegQuality = 72
+		s.targetFPS = 20
+	}
+}
+
 func (s *Streamer) Start() error {
 	s.mu.Lock()
 	if s.isRunning {
@@ -122,18 +212,25 @@ func (s *Streamer) Stop() {
 }
 
 func (s *Streamer) captureLoop(ctx context.Context) {
-	ticker := time.NewTicker(time.Duration(1000/s.targetFPS) * time.Millisecond)
-	defer ticker.Stop()
-
 	buf := new(bytes.Buffer)
+	rawJpegBuf := new(bytes.Buffer)
 
 	for {
+		s.mu.Lock()
+		targetFPS := s.targetFPS
+		sink := s.ytSink
+		s.mu.Unlock()
+
+		interval := time.Duration(1000/targetFPS) * time.Millisecond
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			// If no approved viewers connected, idle sleep to save CPU (PRD Section 64)
-			if s.broadcaster == nil || !s.broadcaster.HasApprovedViewers() {
+		case <-time.After(interval):
+			hasLocalViewers := (s.broadcaster != nil && s.broadcaster.HasApprovedViewers())
+			isYouTubeLive := (sink != nil && sink.IsLive())
+
+			// If no local viewers and not live on YouTube, sleep to save CPU
+			if !hasLocalViewers && !isYouTubeLive {
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
@@ -141,6 +238,7 @@ func (s *Streamer) captureLoop(ctx context.Context) {
 			s.mu.Lock()
 			idx := s.displayIndex
 			quality := s.jpegQuality
+			maxH := s.maxHeight
 			s.mu.Unlock()
 
 			num := screenshot.NumActiveDisplays()
@@ -155,26 +253,43 @@ func (s *Streamer) captureLoop(ctx context.Context) {
 				continue
 			}
 
-			buf.Reset()
-			// Binary Protocol header:
-			// Byte 0: 0x11 (FULL_FRAME)
-			// Bytes 1-8: FrameID uint64 BigEndian
-			// Bytes 9-10: Width uint16 BigEndian
-			// Bytes 11-12: Height uint16 BigEndian
-			// Bytes 13+: JPEG payload
-			s.frameID++
-			_ = buf.WriteByte(0x11)
-			_ = binary.Write(buf, binary.BigEndian, s.frameID)
-			_ = binary.Write(buf, binary.BigEndian, uint16(img.Bounds().Dx()))
-			_ = binary.Write(buf, binary.BigEndian, uint16(img.Bounds().Dy()))
+			var finalImg image.Image = img
+			w := img.Bounds().Dx()
+			h := img.Bounds().Dy()
 
-			err = jpeg.Encode(buf, img, &jpeg.Options{Quality: quality})
+			// Scale down if screen resolution exceeds preset max height
+			if maxH > 0 && h > maxH {
+				newH := maxH
+				newW := int(float64(w) * float64(maxH) / float64(h))
+				scaled := image.NewRGBA(image.Rect(0, 0, newW, newH))
+				draw.ApproxBiLinear.Scale(scaled, scaled.Bounds(), img, img.Bounds(), draw.Over, nil)
+				finalImg = scaled
+			}
+
+			rawJpegBuf.Reset()
+			err = jpeg.Encode(rawJpegBuf, finalImg, &jpeg.Options{Quality: quality})
 			if err != nil {
 				continue
 			}
+			jpegBytes := rawJpegBuf.Bytes()
 
-			// Broadcast frame to approved viewers
-			s.broadcaster.BroadcastFrame(buf.Bytes())
+			// 1. Pipe to YouTube RTMP sink if active
+			if isYouTubeLive {
+				sink.PushFrame(jpegBytes)
+			}
+
+			// 2. Broadcast to local LAN viewers if active
+			if hasLocalViewers {
+				buf.Reset()
+				s.frameID++
+				_ = buf.WriteByte(0x11)
+				_ = binary.Write(buf, binary.BigEndian, s.frameID)
+				_ = binary.Write(buf, binary.BigEndian, uint16(finalImg.Bounds().Dx()))
+				_ = binary.Write(buf, binary.BigEndian, uint16(finalImg.Bounds().Dy()))
+				_, _ = buf.Write(jpegBytes)
+
+				s.broadcaster.BroadcastFrame(buf.Bytes())
+			}
 		}
 	}
 }

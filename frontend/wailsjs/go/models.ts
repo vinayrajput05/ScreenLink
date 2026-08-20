@@ -1,3 +1,30 @@
+export namespace capture {
+	
+	export class QualityPreset {
+	    id: string;
+	    name: string;
+	    description: string;
+	    maxHeight: number;
+	    quality: number;
+	    targetFps: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new QualityPreset(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.maxHeight = source["maxHeight"];
+	        this.quality = source["quality"];
+	        this.targetFps = source["targetFps"];
+	    }
+	}
+
+}
+
 export namespace clients {
 	
 	export class ClientDTO {
@@ -95,6 +122,31 @@ export namespace main {
 	        this.ipAddresses = source["ipAddresses"];
 	        this.defaultPort = source["defaultPort"];
 	        this.version = source["version"];
+	    }
+	}
+
+}
+
+export namespace youtube {
+	
+	export class YouTubeStatusDTO {
+	    status: string;
+	    isLive: boolean;
+	    uptimeSeconds: number;
+	    errorMessage?: string;
+	    rtmpUrl: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new YouTubeStatusDTO(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.status = source["status"];
+	        this.isLive = source["isLive"];
+	        this.uptimeSeconds = source["uptimeSeconds"];
+	        this.errorMessage = source["errorMessage"];
+	        this.rtmpUrl = source["rtmpUrl"];
 	    }
 	}
 

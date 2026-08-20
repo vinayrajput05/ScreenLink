@@ -1,12 +1,15 @@
 import React from 'react';
-import { Monitor, Play, Square, RefreshCw, Layers, Radio, Sparkles } from 'lucide-react';
-import { DisplayInfo, ServerStatus } from '../types';
+import { Monitor, Play, Square, RefreshCw, Layers, Radio, Sliders } from 'lucide-react';
+import { DisplayInfo, QualityPreset, ServerStatus } from '../types';
 
 interface ScreenControlCardProps {
   status: ServerStatus;
   displays: DisplayInfo[];
   selectedDisplay: string;
   onSelectDisplay: (id: string) => void;
+  qualityPresets: QualityPreset[];
+  selectedQuality: string;
+  onSelectQuality: (id: string) => void;
   onStartSharing: () => void;
   onStopSharing: () => void;
 }
@@ -16,6 +19,9 @@ export const ScreenControlCard: React.FC<ScreenControlCardProps> = ({
   displays,
   selectedDisplay,
   onSelectDisplay,
+  qualityPresets,
+  selectedQuality,
+  onSelectQuality,
   onStartSharing,
   onStopSharing,
 }) => {
@@ -23,34 +29,35 @@ export const ScreenControlCard: React.FC<ScreenControlCardProps> = ({
   const isStarting = status === 'starting';
 
   const currentDisplay = displays.find((d) => d.id === selectedDisplay) || displays[0];
+  const currentPreset = qualityPresets.find((q) => q.id === selectedQuality) || qualityPresets[1];
 
   return (
     <div className="glass-panel rounded-3xl p-6 shadow-2xl relative overflow-hidden flex flex-col justify-between">
       <div className="absolute top-0 right-0 w-72 h-72 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
 
-      <div>
-        <div className="flex items-center justify-between mb-5">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-3">
             <div className="p-2.5 bg-indigo-500/10 text-indigo-400 rounded-xl border border-indigo-500/20 shadow-inner">
               <Monitor className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white tracking-tight">Display & Capture</h2>
-              <p className="text-xs text-slate-400">Select which monitor to mirror to LAN viewers</p>
+              <h2 className="text-base font-bold text-white tracking-tight">Display & Stream Quality</h2>
+              <p className="text-xs text-slate-400">Configure monitor capture and resolution profile</p>
             </div>
           </div>
 
-          {isRunning && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-indigo-500/10 border border-indigo-500/30 rounded-lg text-[11px] font-mono text-indigo-300">
-              <Radio className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
-              <span>18-20 FPS</span>
+          {isRunning && currentPreset && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-[11px] font-mono text-emerald-300">
+              <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
+              <span>{currentPreset.targetFps} FPS • {currentPreset.name}</span>
             </div>
           )}
         </div>
 
         {/* Display Selector Box */}
-        <div className="space-y-2">
-          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+        <div>
+          <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1.5 flex items-center justify-between">
             <span>Target Screen</span>
             <span className="text-[11px] font-normal text-slate-400">
               {displays.length} monitor{displays.length === 1 ? '' : 's'} available
@@ -62,7 +69,7 @@ export const ScreenControlCard: React.FC<ScreenControlCardProps> = ({
               value={selectedDisplay}
               onChange={(e) => onSelectDisplay(e.target.value)}
               disabled={isRunning || isStarting}
-              className="w-full px-4 py-3.5 bg-[#090d17]/90 border border-slate-700/80 rounded-2xl text-sm font-semibold text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed appearance-none cursor-pointer transition shadow-inner"
+              className="w-full px-4 py-3 bg-[#090d17]/90 border border-slate-700/80 rounded-2xl text-sm font-semibold text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed appearance-none cursor-pointer transition shadow-inner"
             >
               {displays.map((disp) => (
                 <option key={disp.id} value={disp.id} className="bg-slate-900 text-slate-200">
@@ -74,21 +81,52 @@ export const ScreenControlCard: React.FC<ScreenControlCardProps> = ({
               <Layers className="w-4 h-4" />
             </div>
           </div>
+        </div>
 
-          {currentDisplay && (
-            <div className="flex items-center justify-between px-3.5 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-xs text-slate-400">
-              <span className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
-                Output: <strong className="text-slate-200">{currentDisplay.resolution}</strong>
-              </span>
-              <span className="text-[11px] text-slate-500">Hardware Framebuffer</span>
-            </div>
-          )}
+        {/* Stream Quality Selector Grid */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+              <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Stream Quality Preset</span>
+            </label>
+            {isRunning && (
+              <span className="text-[10px] text-cyan-400 font-medium">✨ Live dynamic adjustment</span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {qualityPresets.map((preset) => {
+              const isSelected = selectedQuality === preset.id;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => onSelectQuality(preset.id)}
+                  className={`p-2.5 rounded-2xl border text-left transition duration-150 cursor-pointer relative overflow-hidden flex flex-col justify-between ${
+                    isSelected
+                      ? 'bg-gradient-to-b from-indigo-600/30 to-indigo-900/40 border-indigo-500/80 text-white shadow-glow-brand ring-1 ring-indigo-500/50'
+                      : 'bg-[#090d17]/80 border-slate-800/90 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full mb-1">
+                    <span className="text-xs font-bold tracking-tight">{preset.name}</span>
+                    {isSelected && (
+                      <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-glow-cyan" />
+                    )}
+                  </div>
+                  <span className="text-[10px] leading-tight opacity-75 font-mono">
+                    {preset.targetFps} FPS • Q{preset.quality}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
       {/* Action Button */}
-      <div className="pt-5 mt-4 border-t border-slate-800/60">
+      <div className="pt-4 mt-3 border-t border-slate-800/60">
         {!isRunning ? (
           <button
             onClick={onStartSharing}
