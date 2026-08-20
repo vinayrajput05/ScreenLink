@@ -38,14 +38,6 @@ export function GetSystemInfo() {
   return window['go']['main']['App']['GetSystemInfo']();
 }
 
-export function GetYouTubeStreamStatus() {
-  return window['go']['main']['App']['GetYouTubeStreamStatus']();
-}
-
-export function IsFFmpegInstalled() {
-  return window['go']['main']['App']['IsFFmpegInstalled']();
-}
-
 export function OnClientStateChanged() {
   return window['go']['main']['App']['OnClientStateChanged']();
 }
@@ -70,14 +62,6 @@ export function StartSharing(arg1) {
   return window['go']['main']['App']['StartSharing'](arg1);
 }
 
-export function StartYouTubeStream(arg1, arg2) {
-  return window['go']['main']['App']['StartYouTubeStream'](arg1, arg2);
-}
-
 export function StopSharing() {
   return window['go']['main']['App']['StopSharing']();
-}
-
-export function StopYouTubeStream() {
-  return window['go']['main']['App']['StopYouTubeStream']();
 }

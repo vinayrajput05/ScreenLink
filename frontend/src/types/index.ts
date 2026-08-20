@@ -16,14 +16,6 @@ export interface QualityPreset {
   targetFps: number;
 }
 
-export interface YouTubeStatus {
-  status: 'offline' | 'connecting' | 'live' | 'error' | string;
-  isLive: boolean;
-  uptimeSeconds: number;
-  errorMessage?: string;
-  rtmpUrl: string;
-}
-
 export interface PendingRequest {
   id: string;
   displayName: string;

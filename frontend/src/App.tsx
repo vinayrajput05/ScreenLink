@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Header } from './components/Header';
 import { ScreenControlCard } from './components/ScreenControlCard';
 import { ShareUrlCard } from './components/ShareUrlCard';
-import { YouTubeLiveCard } from './components/YouTubeLiveCard';
 import { PendingRequestsCard } from './components/PendingRequestsCard';
 import { ConnectedViewersCard } from './components/ConnectedViewersCard';
 import { AnnouncementCard } from './components/AnnouncementCard';
@@ -10,7 +9,6 @@ import { QrCodeModal } from './components/QrCodeModal';
 import {
   DisplayInfo,
   QualityPreset,
-  YouTubeStatus,
   PendingRequest,
   ConnectedViewer,
   Announcement,
@@ -27,10 +25,6 @@ import {
   GetSharingStatus,
   StartSharing,
   StopSharing,
-  StartYouTubeStream,
-  StopYouTubeStream,
-  GetYouTubeStreamStatus,
-  IsFFmpegInstalled,
   ApproveClient,
   RejectClient,
   ApproveAll,
@@ -43,10 +37,10 @@ import {
 import { EventsOn } from '../wailsjs/runtime/runtime';
 
 const DEFAULT_PRESETS: QualityPreset[] = [
-  { id: 'hd', name: '720p HD', description: 'Smooth (24 FPS) • Low Bandwidth', maxHeight: 720, quality: 60, targetFps: 24 },
-  { id: 'fhd', name: '1080p Full HD', description: 'Balanced (20 FPS) • Recommended', maxHeight: 1080, quality: 72, targetFps: 20 },
-  { id: '2k', name: '2K / Retina', description: 'Crisp Text (18 FPS) • Code Demos', maxHeight: 1440, quality: 85, targetFps: 18 },
-  { id: '4k', name: '4K Ultra', description: 'Max Fidelity (15 FPS) • Lossless Detail', maxHeight: 2160, quality: 93, targetFps: 15 },
+  { id: '30fps', name: '30 FPS (Smooth 1080p)', description: 'Minimum 30 FPS • Recommended', maxHeight: 1080, quality: 82, targetFps: 30 },
+  { id: '60fps', name: '60 FPS (Pro Motion)', description: '60 FPS Ultra • Zero Stutter', maxHeight: 1080, quality: 78, targetFps: 60 },
+  { id: '45fps', name: '45 FPS (High Action)', description: '45 FPS • High Motion Fluidity', maxHeight: 1080, quality: 80, targetFps: 45 },
+  { id: 'clarity_30', name: '30 FPS (Crisp Text)', description: '30 FPS • Q88 Razor Sharp', maxHeight: 1080, quality: 88, targetFps: 30 },
 ];
 
 export default function App() {
@@ -54,20 +48,11 @@ export default function App() {
   const [displays, setDisplays] = useState<DisplayInfo[]>([]);
   const [selectedDisplay, setSelectedDisplay] = useState<string>('display-0');
   const [qualityPresets, setQualityPresets] = useState<QualityPreset[]>(DEFAULT_PRESETS);
-  const [selectedQuality, setSelectedQuality] = useState<string>('fhd');
+  const [selectedQuality, setSelectedQuality] = useState<string>('30fps');
   const [ipAddresses, setIpAddresses] = useState<string[]>([]);
   const [selectedIp, setSelectedIp] = useState<string>('127.0.0.1');
   const [port, setPort] = useState<number>(8080);
   
-  // YouTube Live State
-  const [ytStatus, setYtStatus] = useState<YouTubeStatus>({
-    status: 'offline',
-    isLive: false,
-    uptimeSeconds: 0,
-    rtmpUrl: 'rtmp://a.rtmp.youtube.com/live2',
-  });
-  const [isFFmpegInstalled, setIsFFmpegInstalled] = useState<boolean>(true);
-
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
   const [connectedViewers, setConnectedViewers] = useState<ConnectedViewer[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -119,10 +104,6 @@ export default function App() {
         const running = await GetSharingStatus();
         setStatus(running ? 'running' : 'stopped');
       }
-      if (typeof GetYouTubeStreamStatus === 'function') {
-        const yt = await GetYouTubeStreamStatus();
-        if (yt) setYtStatus(yt);
-      }
     } catch (err) {
       console.error('Failed to sync state:', err);
     }
@@ -146,11 +127,6 @@ export default function App() {
           }
         }
 
-        if (typeof IsFFmpegInstalled === 'function') {
-          const installed = await IsFFmpegInstalled();
-          setIsFFmpegInstalled(installed);
-        }
-
         if (typeof GetSystemInfo === 'function') {
           const sys = await GetSystemInfo();
           if (sys && Array.isArray(sys.ipAddresses) && sys.ipAddresses.length > 0) {
@@ -163,11 +139,6 @@ export default function App() {
         if (typeof GetSharingStatus === 'function') {
           const isRunning = await GetSharingStatus();
           setStatus(isRunning ? 'running' : 'stopped');
-        }
-
-        if (typeof GetYouTubeStreamStatus === 'function') {
-          const yt = await GetYouTubeStreamStatus();
-          if (yt) setYtStatus(yt);
         }
 
         await syncClients();
@@ -187,12 +158,6 @@ export default function App() {
         EventsOn('server_state_changed', (payload: any) => {
           if (payload?.status) {
             setStatus(payload.status);
-          }
-        });
-
-        EventsOn('youtube_status_changed', (payload: any) => {
-          if (payload) {
-            setYtStatus(payload);
           }
         });
       }
@@ -235,28 +200,6 @@ export default function App() {
     }
   };
 
-  const handleStartYouTube = async (streamKey: string, rtmpServer: string) => {
-    try {
-      if (typeof StartYouTubeStream === 'function') {
-        await StartYouTubeStream(streamKey, rtmpServer);
-      }
-      showNotification('Connecting to YouTube Live...', 'info');
-    } catch (err: any) {
-      showNotification(`YouTube Live Error: ${err?.message || err}`, 'error');
-    }
-  };
-
-  const handleStopYouTube = async () => {
-    try {
-      if (typeof StopYouTubeStream === 'function') {
-        await StopYouTubeStream();
-      }
-      showNotification('YouTube live stream ended', 'info');
-    } catch (err: any) {
-      showNotification(`Error stopping YouTube stream: ${err?.message || err}`, 'error');
-    }
-  };
-
   const handleSelectQuality = async (presetId: string) => {
     setSelectedQuality(presetId);
     try {
@@ -265,7 +208,7 @@ export default function App() {
       }
       const preset = qualityPresets.find((q) => q.id === presetId);
       if (preset) {
-        showNotification(`Stream quality set to ${preset.name} (${preset.targetFps} FPS)`, 'info');
+        showNotification(`Stream profile: ${preset.name}`, 'info');
       }
     } catch (err) {
       console.error('Quality preset error:', err);
@@ -387,16 +330,6 @@ export default function App() {
           />
         </div>
 
-        {/* YouTube Live Streaming Section */}
-        <div>
-          <YouTubeLiveCard
-            status={ytStatus}
-            isFFmpegInstalled={isFFmpegInstalled}
-            onStartStream={handleStartYouTube}
-            onStopStream={handleStopYouTube}
-          />
-        </div>
-
         {/* Middle Section: Pending Requests + Active Viewers */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
           <PendingRequestsCard
@@ -429,11 +362,7 @@ export default function App() {
         <span>•</span>
         <span>LAN IP: <strong className="font-mono text-cyan-400">{selectedIp}</strong></span>
         <span>•</span>
-        <span>
-          YouTube Live: <strong className={ytStatus.isLive ? 'text-rose-400 font-bold' : 'text-slate-400'}>
-            {ytStatus.isLive ? '🔴 LIVE' : 'Offline'}
-          </strong>
-        </span>
+        <span>Ultra-Low Latency LAN Stream</span>
       </footer>
 
       {/* Toast Notification */}

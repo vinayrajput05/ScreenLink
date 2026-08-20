@@ -29,7 +29,7 @@ export const ScreenControlCard: React.FC<ScreenControlCardProps> = ({
   const isStarting = status === 'starting';
 
   const currentDisplay = displays.find((d) => d.id === selectedDisplay) || displays[0];
-  const currentPreset = qualityPresets.find((q) => q.id === selectedQuality) || qualityPresets[1];
+  const currentPreset = qualityPresets.find((q) => q.id === selectedQuality) || qualityPresets[0];
 
   return (
     <div className="glass-panel rounded-3xl p-6 shadow-2xl relative overflow-hidden flex flex-col justify-between">
@@ -42,8 +42,8 @@ export const ScreenControlCard: React.FC<ScreenControlCardProps> = ({
               <Monitor className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white tracking-tight">Display & Stream Quality</h2>
-              <p className="text-xs text-slate-400">Configure monitor capture and resolution profile</p>
+              <h2 className="text-base font-bold text-white tracking-tight">Display & Framerate</h2>
+              <p className="text-xs text-slate-400">Configure screen capture monitor and stream speed</p>
             </div>
           </div>
 
@@ -83,12 +83,12 @@ export const ScreenControlCard: React.FC<ScreenControlCardProps> = ({
           </div>
         </div>
 
-        {/* Stream Quality Selector Grid */}
+        {/* Stream Quality & FPS Presets */}
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
               <Sliders className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Stream Quality Preset</span>
+              <span>Framerate & Performance Profile</span>
             </label>
             {isRunning && (
               <span className="text-[10px] text-cyan-400 font-medium">✨ Live dynamic adjustment</span>

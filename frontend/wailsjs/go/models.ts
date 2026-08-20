@@ -127,28 +127,3 @@ export namespace main {
 
 }
 
-export namespace youtube {
-	
-	export class YouTubeStatusDTO {
-	    status: string;
-	    isLive: boolean;
-	    uptimeSeconds: number;
-	    errorMessage?: string;
-	    rtmpUrl: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new YouTubeStatusDTO(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.status = source["status"];
-	        this.isLive = source["isLive"];
-	        this.uptimeSeconds = source["uptimeSeconds"];
-	        this.errorMessage = source["errorMessage"];
-	        this.rtmpUrl = source["rtmpUrl"];
-	    }
-	}
-
-}
-

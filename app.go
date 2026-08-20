@@ -10,7 +10,6 @@ import (
 	"lanmirror/internal/clients"
 	"lanmirror/internal/network"
 	"lanmirror/internal/server"
-	"lanmirror/internal/youtube"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -44,7 +43,6 @@ type App struct {
 	ctx            context.Context
 	server         *server.Server
 	streamer       *capture.Streamer
-	ytStreamer     *youtube.YouTubeStreamer
 	serverMu       sync.Mutex
 	isSharing      bool
 	currentPort    int
@@ -63,8 +61,7 @@ type AnnouncementRecord struct {
 func NewApp() *App {
 	return &App{
 		currentPort:    8080,
-		currentQuality: "fhd",
-		ytStreamer:     youtube.NewYouTubeStreamer(),
+		currentQuality: "30fps",
 	}
 }
 
@@ -87,88 +84,6 @@ func (a *App) GetSharingStatus() bool {
 	a.serverMu.Lock()
 	defer a.serverMu.Unlock()
 	return a.isSharing
-}
-
-// IsFFmpegInstalled checks whether FFmpeg is available on the machine
-func (a *App) IsFFmpegInstalled() bool {
-	return youtube.CheckFFmpegInstalled()
-}
-
-// StartYouTubeStream begins streaming screen frames to YouTube Live via RTMP
-func (a *App) StartYouTubeStream(streamKey string, rtmpServer string) (bool, error) {
-	a.serverMu.Lock()
-	if a.ytStreamer == nil {
-		a.ytStreamer = youtube.NewYouTubeStreamer()
-	}
-
-	fps := 20
-	switch a.currentQuality {
-	case "hd":
-		fps = 24
-	case "2k":
-		fps = 18
-	case "4k":
-		fps = 15
-	}
-
-	// Ensure screen capture streamer is running
-	if a.streamer == nil {
-		// If local server is not running, we create a dummy broadcaster for streamer
-		streamer := capture.NewStreamer(a.server)
-		streamer.SetQualityPreset(a.currentQuality)
-		streamer.SetYouTubeSink(a.ytStreamer)
-		if err := streamer.Start(); err != nil {
-			a.serverMu.Unlock()
-			return false, fmt.Errorf("failed to start screen capture: %w", err)
-		}
-		a.streamer = streamer
-	} else {
-		a.streamer.SetYouTubeSink(a.ytStreamer)
-	}
-	a.serverMu.Unlock()
-
-	err := a.ytStreamer.Start(streamKey, rtmpServer, fps)
-	if err != nil {
-		return false, err
-	}
-
-	if a.ctx != nil {
-		runtime.EventsEmit(a.ctx, "youtube_status_changed", a.ytStreamer.GetStatus())
-	}
-	return true, nil
-}
-
-// StopYouTubeStream stops streaming to YouTube Live
-func (a *App) StopYouTubeStream() error {
-	a.serverMu.Lock()
-	var err error
-	if a.ytStreamer != nil {
-		err = a.ytStreamer.Stop()
-	}
-	// If local server is also not sharing, stop screen capture streamer to save CPU
-	if !a.isSharing && a.streamer != nil {
-		a.streamer.Stop()
-		a.streamer = nil
-	}
-	a.serverMu.Unlock()
-
-	if a.ctx != nil && a.ytStreamer != nil {
-		runtime.EventsEmit(a.ctx, "youtube_status_changed", a.ytStreamer.GetStatus())
-	}
-	return err
-}
-
-// GetYouTubeStreamStatus returns current YouTube live stream status
-func (a *App) GetYouTubeStreamStatus() youtube.YouTubeStatusDTO {
-	a.serverMu.Lock()
-	defer a.serverMu.Unlock()
-	if a.ytStreamer == nil {
-		return youtube.YouTubeStatusDTO{
-			Status:  youtube.StatusOffline,
-			RtmpURL: "rtmp://a.rtmp.youtube.com/live2",
-		}
-	}
-	return a.ytStreamer.GetStatus()
 }
 
 // GetQualityPresets returns stream resolution presets
@@ -247,7 +162,6 @@ func (a *App) StartSharing(port int) (bool, error) {
 	a.server = nil
 	a.streamer = nil
 	quality := a.currentQuality
-	yt := a.ytStreamer
 	a.serverMu.Unlock()
 
 	if oldStreamer != nil {
@@ -269,9 +183,6 @@ func (a *App) StartSharing(port int) (bool, error) {
 
 	streamer := capture.NewStreamer(srv)
 	streamer.SetQualityPreset(quality)
-	if yt != nil {
-		streamer.SetYouTubeSink(yt)
-	}
 	if err := streamer.Start(); err != nil {
 		_ = srv.Stop()
 		return false, fmt.Errorf("failed to start screen capture streamer: %w", err)
@@ -303,15 +214,12 @@ func (a *App) StopSharing() error {
 
 	srv := a.server
 	streamer := a.streamer
-	isYTStreaming := (a.ytStreamer != nil && a.ytStreamer.IsLive())
 	a.server = nil
-	if !isYTStreaming {
-		a.streamer = nil
-	}
+	a.streamer = nil
 	a.isSharing = false
 	a.serverMu.Unlock()
 
-	if !isYTStreaming && streamer != nil {
+	if streamer != nil {
 		streamer.Stop()
 	}
 
