@@ -6,7 +6,6 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/kbinani/screenshot v0.0.0-20250624051815-089614a94018
 	github.com/wailsapp/wails/v2 v2.15.0
-	golang.org/x/image v0.45.0
 )
 
 require (

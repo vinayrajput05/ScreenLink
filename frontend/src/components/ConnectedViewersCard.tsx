@@ -1,5 +1,5 @@
 import React from 'react';
-import { Users, UserX, Laptop, Smartphone, Tablet, Radio, Globe } from 'lucide-react';
+import { Users, UserX, Laptop, Smartphone, Tablet } from 'lucide-react';
 import { ConnectedViewer } from '../types';
 
 interface ConnectedViewersCardProps {
@@ -45,7 +45,7 @@ export const ConnectedViewersCard: React.FC<ConnectedViewersCardProps> = ({
         {viewers.length > 0 && (
           <button
             onClick={onDisconnectAll}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-bold rounded-xl border border-rose-500/30 transition active:scale-[0.98] cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-bold rounded-xl border border-rose-500/30 transition active:scale-[0.98] cursor-pointer shrink-0"
           >
             <UserX className="w-3.5 h-3.5" />
             <span>Disconnect All</span>
@@ -69,16 +69,16 @@ export const ConnectedViewersCard: React.FC<ConnectedViewersCardProps> = ({
           viewers.map((viewer) => (
             <div
               key={viewer.id}
-              className="flex items-center justify-between p-3.5 bg-[#0a0e1a]/90 border border-slate-800 rounded-2xl hover:border-slate-700 transition shadow-lg group"
+              className="flex items-center justify-between gap-3 p-3.5 bg-[#0a0e1a]/90 border border-slate-800 rounded-2xl hover:border-slate-700 transition shadow-lg group"
             >
-              <div className="flex items-center gap-3">
-                <div className="relative p-2.5 bg-slate-800/80 rounded-xl text-slate-300 border border-slate-700/50">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="relative p-2.5 bg-slate-800/80 rounded-xl text-slate-300 border border-slate-700/50 shrink-0">
                   {getDeviceIcon(viewer.browser, viewer.displayName)}
                   <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-[#0f1422] animate-pulse" />
                 </div>
-                <div>
-                  <h4 className="text-xs font-bold text-white tracking-wide">{viewer.displayName}</h4>
-                  <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono mt-0.5">
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-xs font-bold text-white tracking-wide truncate">{viewer.displayName}</h4>
+                  <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-slate-400 font-mono mt-0.5">
                     <span className="text-emerald-300 font-semibold">{viewer.ip}</span>
                     <span>•</span>
                     <span className="font-sans text-slate-300">{viewer.browser}</span>
@@ -93,7 +93,7 @@ export const ConnectedViewersCard: React.FC<ConnectedViewersCardProps> = ({
               <button
                 onClick={() => onDisconnect(viewer.id)}
                 title="Disconnect Viewer"
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/90 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 text-xs font-semibold rounded-xl border border-slate-700 hover:border-rose-500/30 transition active:scale-[0.98] cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/90 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 text-xs font-semibold rounded-xl border border-slate-700 hover:border-rose-500/30 transition active:scale-[0.98] cursor-pointer shrink-0 whitespace-nowrap"
               >
                 <UserX className="w-3.5 h-3.5" />
                 <span>Disconnect</span>

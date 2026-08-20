@@ -1,5 +1,5 @@
 import React from 'react';
-import { UserCheck, Check, X, Laptop, Smartphone, Tablet, Clock, ShieldAlert, Sparkles } from 'lucide-react';
+import { UserCheck, Check, X, Laptop, Smartphone, Tablet, Clock } from 'lucide-react';
 import { PendingRequest } from '../types';
 
 interface PendingRequestsCardProps {
@@ -49,7 +49,7 @@ export const PendingRequestsCard: React.FC<PendingRequestsCardProps> = ({
         {requests.length > 1 && (
           <button
             onClick={onApproveAll}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 active:scale-[0.98] text-emerald-300 text-xs font-bold rounded-xl border border-emerald-500/30 transition cursor-pointer shadow-glow-emerald"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/15 hover:bg-emerald-500/25 active:scale-[0.98] text-emerald-300 text-xs font-bold rounded-xl border border-emerald-500/30 transition cursor-pointer shadow-glow-emerald shrink-0"
           >
             <Check className="w-3.5 h-3.5" />
             <span>Approve All ({requests.length})</span>
@@ -73,32 +73,32 @@ export const PendingRequestsCard: React.FC<PendingRequestsCardProps> = ({
           requests.map((req) => (
             <div
               key={req.id}
-              className="flex items-center justify-between p-3.5 bg-[#0a0e1a]/90 border border-amber-500/30 rounded-2xl hover:border-amber-500/50 transition shadow-lg animate-fadeIn"
+              className="flex items-center justify-between gap-3 p-3.5 bg-[#0a0e1a]/90 border border-amber-500/30 rounded-2xl hover:border-amber-500/50 transition shadow-lg animate-fadeIn"
             >
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-slate-800/80 rounded-xl text-slate-300 border border-slate-700/50">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="p-2.5 bg-slate-800/80 rounded-xl text-slate-300 border border-slate-700/50 shrink-0">
                   {getDeviceIcon(req.browser, req.displayName)}
                 </div>
-                <div>
-                  <h4 className="text-xs font-bold text-white tracking-wide">{req.displayName}</h4>
-                  <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono mt-0.5">
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-xs font-bold text-white tracking-wide truncate">{req.displayName}</h4>
+                  <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-slate-400 font-mono mt-0.5">
                     <span className="text-indigo-300 font-semibold">{req.ip}</span>
                     <span>•</span>
                     <span className="font-sans text-slate-300">{req.browser}</span>
                     <span>•</span>
                     <span className="flex items-center gap-1 text-slate-400">
-                      <Clock className="w-3 h-3" />
-                      {req.requestedAt}
+                      <Clock className="w-3 h-3 shrink-0" />
+                      <span>{req.requestedAt}</span>
                     </span>
                   </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   onClick={() => onApprove(req.id)}
                   title="Approve Device"
-                  className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white text-xs font-bold rounded-xl shadow-glow-emerald transition active:scale-[0.98] cursor-pointer"
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white text-xs font-bold rounded-xl shadow-glow-emerald transition active:scale-[0.98] cursor-pointer whitespace-nowrap"
                 >
                   <Check className="w-3.5 h-3.5" />
                   <span>Approve</span>
@@ -106,7 +106,7 @@ export const PendingRequestsCard: React.FC<PendingRequestsCardProps> = ({
                 <button
                   onClick={() => onReject(req.id)}
                   title="Reject Request"
-                  className="flex items-center gap-1 px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold rounded-xl border border-rose-500/30 transition active:scale-[0.98] cursor-pointer"
+                  className="flex items-center gap-1 px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-xs font-semibold rounded-xl border border-rose-500/30 transition active:scale-[0.98] cursor-pointer whitespace-nowrap"
                 >
                   <X className="w-3.5 h-3.5 text-rose-400" />
                   <span>Reject</span>
