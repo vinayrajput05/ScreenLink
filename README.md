@@ -1,19 +1,69 @@
-# README
+# LANMirror
 
-## About
+Lightweight, view-only local-network screen sharing desktop application built with **Go**, **Wails v2**, **React 19**, **TypeScript**, and **Tailwind CSS**.
 
-This is the official Wails React-TS template.
+---
 
-You can configure the project by editing `wails.json`. More information about the project settings can be found
-here: https://wails.io/docs/reference/project-config
+## Features
 
-## Live Development
+- **No Viewer Installation Required**: Any device on the same local Wi-Fi/LAN (iPhone, iPad, Android, Mac, Windows, Linux) opens the host URL in a web browser.
+- **Explicit Host Authorization**: Viewers must request access and be approved by the host before receiving any screen data.
+- **Real-Time Live Streaming**: Hardware-accelerated desktop capture with binary WebSocket frame transport to an HTML5 canvas.
+- **Host Announcements**: Send one-way message banners to all connected viewers in real time.
+- **Zero Internet / Cloud Dependency**: Operates entirely offline on the local network (no cloud relays, no WebRTC/STUN/TURN required).
 
-To run in live development mode, run `wails dev` in the project directory. This will run a Vite development
-server that will provide very fast hot reload of your frontend changes. If you want to develop in a browser
-and have access to your Go methods, there is also a dev server that runs on http://localhost:34115. Connect
-to this in your browser, and you can call your Go code from devtools.
+---
 
-## Building
+## Development
 
-To build a redistributable, production mode package, use `wails build`.
+### Prerequisites
+- [Go](https://go.dev/) (1.20+)
+- [Node.js](https://nodejs.org/) (18+)
+- [Wails CLI v2](https://wails.io/)
+
+### Run Live Development Mode
+```bash
+# Set PATH if necessary
+export PATH=$PATH:/opt/homebrew/bin:$HOME/go/bin
+
+# Start with hot-reloading
+wails dev
+```
+
+---
+
+## Building Installers
+
+### 1. macOS (.dmg Installer & .app Bundle)
+
+Build the production application:
+```bash
+wails build
+```
+This generates the `.app` bundle at `build/bin/LANMirror.app`.
+
+To package into a drag-and-drop `.dmg` installer:
+```bash
+hdiutil create -volname "LANMirror" -srcfolder build/bin/LANMirror.app -ov -format UDZO build/bin/LANMirror-Installer.dmg
+```
+Your installer will be ready at:
+`build/bin/LANMirror-Installer.dmg`
+
+---
+
+### 2. Windows (.exe Installer via NSIS)
+
+To build a standalone Windows installer (.exe):
+```bash
+wails build -platform windows/amd64 -nsis
+```
+*(Note: Requires NSIS installed on Windows or via cross-compilation toolchain).*
+
+---
+
+### 3. Testing in Browser
+
+1. Start LANMirror and click **Start Sharing**.
+2. Open the displayed URL (e.g. `http://10.163.220.48:8080`) on any phone, tablet, or browser on the same Wi-Fi.
+3. Enter your name and tap **Request Access**.
+4. In the LANMirror desktop app, click **Approve**.
