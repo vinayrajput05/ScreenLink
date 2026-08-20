@@ -10,12 +10,20 @@ export function ApproveClient(arg1) {
   return window['go']['main']['App']['ApproveClient'](arg1);
 }
 
+export function ClearChatHistory() {
+  return window['go']['main']['App']['ClearChatHistory']();
+}
+
 export function DisconnectAll() {
   return window['go']['main']['App']['DisconnectAll']();
 }
 
 export function DisconnectClient(arg1) {
   return window['go']['main']['App']['DisconnectClient'](arg1);
+}
+
+export function GetChatMessages() {
+  return window['go']['main']['App']['GetChatMessages']();
 }
 
 export function GetClients() {
@@ -38,6 +46,10 @@ export function GetSystemInfo() {
   return window['go']['main']['App']['GetSystemInfo']();
 }
 
+export function IsScreenStreaming() {
+  return window['go']['main']['App']['IsScreenStreaming']();
+}
+
 export function OnClientStateChanged() {
   return window['go']['main']['App']['OnClientStateChanged']();
 }
@@ -52,6 +64,14 @@ export function SelectDisplay(arg1) {
 
 export function SendAnnouncement(arg1) {
   return window['go']['main']['App']['SendAnnouncement'](arg1);
+}
+
+export function SendChatMessage(arg1) {
+  return window['go']['main']['App']['SendChatMessage'](arg1);
+}
+
+export function SendCodeSnippet(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SendCodeSnippet'](arg1, arg2, arg3);
 }
 
 export function SetQualityPreset(arg1) {

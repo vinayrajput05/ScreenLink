@@ -127,3 +127,34 @@ export namespace main {
 
 }
 
+export namespace server {
+	
+	export class ChatMessage {
+	    id: string;
+	    type: string;
+	    title?: string;
+	    message: string;
+	    language?: string;
+	    isCode: boolean;
+	    sentAt: string;
+	    sender: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ChatMessage(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.type = source["type"];
+	        this.title = source["title"];
+	        this.message = source["message"];
+	        this.language = source["language"];
+	        this.isCode = source["isCode"];
+	        this.sentAt = source["sentAt"];
+	        this.sender = source["sender"];
+	    }
+	}
+
+}
+

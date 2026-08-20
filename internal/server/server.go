@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -18,42 +19,61 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true // Allow all local LAN origins
 	},
-	ReadBufferSize:  4096,
-	WriteBufferSize: 65536,
+	ReadBufferSize:  8192,
+	WriteBufferSize: 131072, // Support long source code snippets
 }
 
 type ServerCallback interface {
 	OnClientStateChanged()
 }
 
+type ChatMessage struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"` // "chat" | "code" | "announcement"
+	Title    string `json:"title,omitempty"`
+	Message  string `json:"message"`
+	Language string `json:"language,omitempty"`
+	IsCode   bool   `json:"isCode"`
+	SentAt   string `json:"sentAt"`
+	Sender   string `json:"sender"`
+}
+
 type Server struct {
-	port       int
-	listener   net.Listener
-	httpServer *http.Server
-	clients    map[string]*clients.Client
-	clientsMu  sync.RWMutex
-	callback   ServerCallback
-	isRunning  bool
-	viewerHTML []byte
-	stopChan   chan struct{}
+	port        int
+	listener    net.Listener
+	httpServer  *http.Server
+	clients     map[string]*clients.Client
+	clientsMu   sync.RWMutex
+	callback    ServerCallback
+	isRunning   bool
+	viewerHTML  []byte
+	stopChan    chan struct{}
+	chatHistory []ChatMessage
+	chatMu      sync.RWMutex
 }
 
 type WsMessage struct {
-	Type        string `json:"type"`
-	ClientID    string `json:"client_id,omitempty"`
-	DisplayName string `json:"display_name,omitempty"`
-	Message     string `json:"message,omitempty"`
-	State       string `json:"state,omitempty"`
-	SentAt      string `json:"sent_at,omitempty"`
+	Type        string        `json:"type"`
+	ClientID    string        `json:"client_id,omitempty"`
+	DisplayName string        `json:"display_name,omitempty"`
+	Message     string        `json:"message,omitempty"`
+	Title       string        `json:"title,omitempty"`
+	Language    string        `json:"language,omitempty"`
+	IsCode      bool          `json:"isCode,omitempty"`
+	State       string        `json:"state,omitempty"`
+	SentAt      string        `json:"sent_at,omitempty"`
+	History     []ChatMessage `json:"history,omitempty"`
+	ChatPayload *ChatMessage  `json:"chatPayload,omitempty"`
 }
 
 func NewServer(port int, viewerHTML []byte, cb ServerCallback) *Server {
 	return &Server{
-		port:       port,
-		clients:    make(map[string]*clients.Client),
-		callback:   cb,
-		viewerHTML: viewerHTML,
-		stopChan:   make(chan struct{}),
+		port:        port,
+		clients:     make(map[string]*clients.Client),
+		callback:    cb,
+		viewerHTML:  viewerHTML,
+		stopChan:    make(chan struct{}),
+		chatHistory: make([]ChatMessage, 0),
 	}
 }
 
@@ -79,8 +99,8 @@ func (s *Server) Start() error {
 	s.listener = listener
 	s.httpServer = &http.Server{
 		Handler:      mux,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
 	}
 
 	s.clientsMu.Lock()
@@ -158,6 +178,14 @@ func (s *Server) Stop() error {
 func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+
+	// Check if local viewer.html file exists on disk for immediate live edits
+	if data, err := os.ReadFile("internal/server/viewer.html"); err == nil && len(data) > 0 {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data)
+		return
+	}
+
 	if len(s.viewerHTML) > 0 {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(s.viewerHTML)
@@ -190,10 +218,10 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	userAgent := r.UserAgent()
 	browser := simplifyUserAgent(userAgent)
 
-	conn.SetReadLimit(65536)
-	_ = conn.SetReadDeadline(time.Now().Add(15 * time.Second))
+	conn.SetReadLimit(524288) // 512 KB limit for code snippets
+	_ = conn.SetReadDeadline(time.Now().Add(20 * time.Second))
 	conn.SetPongHandler(func(string) error {
-		_ = conn.SetReadDeadline(time.Now().Add(15 * time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(20 * time.Second))
 		return nil
 	})
 
@@ -216,7 +244,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			break
 		}
-		_ = conn.SetReadDeadline(time.Now().Add(15 * time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(20 * time.Second))
 
 		var msg WsMessage
 		if err := json.Unmarshal(msgBytes, &msg); err != nil {
@@ -263,6 +291,11 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			})
 			_ = conn.WriteMessage(websocket.TextMessage, resp)
 
+			// If approved, send chat history
+			if currentState == clients.ClientApproved {
+				s.sendChatHistoryTo(client)
+			}
+
 			if s.callback != nil {
 				go s.callback.OnClientStateChanged()
 			}
@@ -281,8 +314,26 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) sendChatHistoryTo(c *clients.Client) {
+	s.chatMu.RLock()
+	history := make([]ChatMessage, len(s.chatHistory))
+	copy(history, s.chatHistory)
+	s.chatMu.RUnlock()
+
+	if len(history) > 0 {
+		payload, _ := json.Marshal(WsMessage{
+			Type:    "chat_history",
+			History: history,
+		})
+		_ = c.SafeSend(websocket.TextMessage, payload)
+	}
+}
+
 // BroadcastFrame implements FrameBroadcaster
 func (s *Server) BroadcastFrame(frameData []byte) {
+	if s == nil {
+		return
+	}
 	s.clientsMu.RLock()
 	defer s.clientsMu.RUnlock()
 
@@ -295,6 +346,9 @@ func (s *Server) BroadcastFrame(frameData []byte) {
 
 // HasApprovedViewers implements FrameBroadcaster
 func (s *Server) HasApprovedViewers() bool {
+	if s == nil {
+		return false
+	}
 	s.clientsMu.RLock()
 	defer s.clientsMu.RUnlock()
 
@@ -307,6 +361,9 @@ func (s *Server) HasApprovedViewers() bool {
 }
 
 func (s *Server) ApproveClient(clientID string) {
+	if s == nil {
+		return
+	}
 	s.clientsMu.Lock()
 	client, exists := s.clients[clientID]
 	if exists {
@@ -317,6 +374,7 @@ func (s *Server) ApproveClient(clientID string) {
 			State: "approved",
 		})
 		_ = client.SafeSend(websocket.TextMessage, resp)
+		go s.sendChatHistoryTo(client)
 	}
 	s.clientsMu.Unlock()
 
@@ -326,6 +384,9 @@ func (s *Server) ApproveClient(clientID string) {
 }
 
 func (s *Server) RejectClient(clientID string) {
+	if s == nil {
+		return
+	}
 	s.clientsMu.Lock()
 	client, exists := s.clients[clientID]
 	if exists {
@@ -348,6 +409,9 @@ func (s *Server) RejectClient(clientID string) {
 }
 
 func (s *Server) ApproveAll() {
+	if s == nil {
+		return
+	}
 	s.clientsMu.Lock()
 	for _, client := range s.clients {
 		if client.State == clients.ClientPending {
@@ -358,6 +422,7 @@ func (s *Server) ApproveAll() {
 				State: "approved",
 			})
 			_ = client.SafeSend(websocket.TextMessage, resp)
+			go s.sendChatHistoryTo(client)
 		}
 	}
 	s.clientsMu.Unlock()
@@ -368,6 +433,9 @@ func (s *Server) ApproveAll() {
 }
 
 func (s *Server) DisconnectClient(clientID string) {
+	if s == nil {
+		return
+	}
 	s.clientsMu.Lock()
 	client, exists := s.clients[clientID]
 	if exists {
@@ -390,6 +458,9 @@ func (s *Server) DisconnectClient(clientID string) {
 }
 
 func (s *Server) DisconnectAll() {
+	if s == nil {
+		return
+	}
 	s.clientsMu.Lock()
 	for id, client := range s.clients {
 		if client.State == clients.ClientApproved {
@@ -412,15 +483,33 @@ func (s *Server) DisconnectAll() {
 	}
 }
 
-func (s *Server) BroadcastAnnouncement(message string) {
-	s.clientsMu.Lock()
-	defer s.clientsMu.Unlock()
+// BroadcastChatMessage broadcasts rich messages/source code to all viewers
+func (s *Server) BroadcastChatMessage(msg ChatMessage) {
+	if s == nil {
+		return
+	}
+
+	s.chatMu.Lock()
+	s.chatHistory = append([]ChatMessage{msg}, s.chatHistory...)
+	s.chatMu.Unlock()
+
+	msgType := "chat_message"
+	if msg.Type == "announcement" {
+		msgType = "announcement"
+	}
 
 	payload, _ := json.Marshal(WsMessage{
-		Type:    "announcement",
-		Message: message,
-		SentAt:  time.Now().Format("15:04:05"),
+		Type:        msgType,
+		Message:     msg.Message,
+		Title:       msg.Title,
+		Language:    msg.Language,
+		IsCode:      msg.IsCode,
+		SentAt:      msg.SentAt,
+		ChatPayload: &msg,
 	})
+
+	s.clientsMu.RLock()
+	defer s.clientsMu.RUnlock()
 
 	for _, client := range s.clients {
 		if client.State == clients.ClientApproved {
@@ -429,7 +518,33 @@ func (s *Server) BroadcastAnnouncement(message string) {
 	}
 }
 
+func (s *Server) BroadcastAnnouncement(message string) {
+	s.BroadcastChatMessage(ChatMessage{
+		ID:      fmt.Sprintf("msg-%d", time.Now().UnixNano()),
+		Type:    "announcement",
+		Message: message,
+		IsCode:  false,
+		SentAt:  time.Now().Format("15:04:05"),
+		Sender:  "Host",
+	})
+}
+
+func (s *Server) GetChatHistory() []ChatMessage {
+	if s == nil {
+		return make([]ChatMessage, 0)
+	}
+	s.chatMu.RLock()
+	defer s.chatMu.RUnlock()
+
+	res := make([]ChatMessage, len(s.chatHistory))
+	copy(res, s.chatHistory)
+	return res
+}
+
 func (s *Server) GetPendingClients() []clients.ClientDTO {
+	if s == nil {
+		return make([]clients.ClientDTO, 0)
+	}
 	s.clientsMu.RLock()
 	defer s.clientsMu.RUnlock()
 
@@ -443,6 +558,9 @@ func (s *Server) GetPendingClients() []clients.ClientDTO {
 }
 
 func (s *Server) GetConnectedClients() []clients.ClientDTO {
+	if s == nil {
+		return make([]clients.ClientDTO, 0)
+	}
 	s.clientsMu.RLock()
 	defer s.clientsMu.RUnlock()
 
@@ -457,25 +575,25 @@ func (s *Server) GetConnectedClients() []clients.ClientDTO {
 
 func simplifyUserAgent(ua string) string {
 	if strings.Contains(ua, "iPhone") {
-		return "iPhone (Safari/WebKit)"
+		return "iPhone (Safari)"
 	}
 	if strings.Contains(ua, "iPad") {
-		return "iPad (Safari/WebKit)"
+		return "iPad (Safari)"
 	}
 	if strings.Contains(ua, "Android") {
-		return "Android Mobile"
+		return "Android Device"
 	}
 	if strings.Contains(ua, "Edg/") {
-		return "Edge Browser"
+		return "Edge"
 	}
 	if strings.Contains(ua, "Chrome/") {
-		return "Chrome Browser"
+		return "Chrome"
 	}
 	if strings.Contains(ua, "Firefox/") {
-		return "Firefox Browser"
+		return "Firefox"
 	}
 	if strings.Contains(ua, "Safari/") {
-		return "Safari Browser"
+		return "Safari"
 	}
 	return "Web Browser"
 }

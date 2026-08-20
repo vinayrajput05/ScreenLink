@@ -11,10 +11,10 @@ import {
   QualityPreset,
   PendingRequest,
   ConnectedViewer,
-  Announcement,
+  ChatMessage,
   ServerStatus,
 } from './types';
-import { Sparkles, Cast, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Sparkles, CheckCircle2 } from 'lucide-react';
 
 // Import Wails runtime and bindings
 import {
@@ -30,7 +30,10 @@ import {
   ApproveAll,
   DisconnectClient,
   DisconnectAll,
-  SendAnnouncement,
+  SendChatMessage,
+  SendCodeSnippet,
+  GetChatMessages,
+  ClearChatHistory,
   GetClients,
   SelectDisplay,
 } from '../wailsjs/go/main/App';
@@ -55,7 +58,7 @@ export default function App() {
   
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
   const [connectedViewers, setConnectedViewers] = useState<ConnectedViewer[]>([]);
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   
   const [isQrModalOpen, setIsQrModalOpen] = useState<boolean>(false);
   const [notification, setNotification] = useState<{ msg: string; type: 'success' | 'info' | 'error' } | null>(null);
@@ -104,6 +107,10 @@ export default function App() {
         const running = await GetSharingStatus();
         setStatus(running ? 'running' : 'stopped');
       }
+      if (typeof GetChatMessages === 'function') {
+        const msgs = await GetChatMessages();
+        if (Array.isArray(msgs)) setMessages(msgs);
+      }
     } catch (err) {
       console.error('Failed to sync state:', err);
     }
@@ -141,6 +148,11 @@ export default function App() {
           setStatus(isRunning ? 'running' : 'stopped');
         }
 
+        if (typeof GetChatMessages === 'function') {
+          const msgs = await GetChatMessages();
+          if (Array.isArray(msgs)) setMessages(msgs);
+        }
+
         await syncClients();
       } catch (err) {
         console.error('Initialization error:', err);
@@ -158,6 +170,12 @@ export default function App() {
         EventsOn('server_state_changed', (payload: any) => {
           if (payload?.status) {
             setStatus(payload.status);
+          }
+        });
+
+        EventsOn('messages_updated', (msgs: any) => {
+          if (Array.isArray(msgs)) {
+            setMessages(msgs);
           }
         });
       }
@@ -179,7 +197,7 @@ export default function App() {
       }
       setStatus('running');
       await syncClients();
-      showNotification(`Live share active on ${shareUrl}`, 'success');
+      showNotification(`Live screen share active on ${shareUrl}`, 'success');
     } catch (err: any) {
       setStatus('error');
       showNotification(`Failed to start sharing: ${err?.message || err}`, 'error');
@@ -191,10 +209,7 @@ export default function App() {
       if (typeof StopSharing === 'function') {
         await StopSharing();
       }
-      setStatus('stopped');
-      setPendingRequests([]);
-      setConnectedViewers([]);
-      showNotification('Screen sharing stopped', 'info');
+      showNotification('Screen video stream paused (chat & code sharing remains active)', 'info');
     } catch (err: any) {
       showNotification(`Error stopping sharing: ${err?.message || err}`, 'error');
     }
@@ -282,20 +297,37 @@ export default function App() {
     }
   };
 
-  const handleSendAnnouncement = async (message: string) => {
+  const handleSendMessage = async (message: string) => {
     try {
-      if (typeof SendAnnouncement === 'function') {
-        await SendAnnouncement(message);
+      if (typeof SendChatMessage === 'function') {
+        await SendChatMessage(message);
       }
-      const newAnn: Announcement = {
-        id: `ann-${Date.now()}`,
-        message,
-        sentAt: 'Just now',
-      };
-      setAnnouncements((prev) => [newAnn, ...prev]);
-      showNotification('Announcement broadcasted to viewers', 'success');
+      showNotification('Message broadcasted to viewer sidebar', 'success');
     } catch (err) {
-      console.error('Announcement error:', err);
+      console.error('Send message error:', err);
+    }
+  };
+
+  const handleSendCode = async (title: string, code: string, language: string) => {
+    try {
+      if (typeof SendCodeSnippet === 'function') {
+        await SendCodeSnippet(title, code, language);
+      }
+      showNotification(`Code snippet "${title}" sent to viewer sidebars`, 'success');
+    } catch (err) {
+      console.error('Send code error:', err);
+    }
+  };
+
+  const handleClearMessages = async () => {
+    try {
+      if (typeof ClearChatHistory === 'function') {
+        await ClearChatHistory();
+      }
+      setMessages([]);
+      showNotification('Chat history cleared', 'info');
+    } catch (err) {
+      console.error('Clear history error:', err);
     }
   };
 
@@ -331,7 +363,7 @@ export default function App() {
         </div>
 
         {/* Middle Section: Pending Requests + Active Viewers */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
           <PendingRequestsCard
             requests={pendingRequests}
             onApprove={handleApproveRequest}
@@ -346,12 +378,14 @@ export default function App() {
           />
         </div>
 
-        {/* Bottom Section: Host Announcement */}
+        {/* Bottom Section: Host Chat & Code Broadcaster */}
         <div>
           <AnnouncementCard
             status={status}
-            announcements={announcements}
-            onSendAnnouncement={handleSendAnnouncement}
+            messages={messages}
+            onSendMessage={handleSendMessage}
+            onSendCode={handleSendCode}
+            onClearMessages={handleClearMessages}
           />
         </div>
       </main>
@@ -362,7 +396,7 @@ export default function App() {
         <span>•</span>
         <span>LAN IP: <strong className="font-mono text-cyan-400">{selectedIp}</strong></span>
         <span>•</span>
-        <span>Ultra-Low Latency LAN Stream</span>
+        <span>Screen Mirror & Live Code Sidebar Broadcaster</span>
       </footer>
 
       {/* Toast Notification */}

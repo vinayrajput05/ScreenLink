@@ -1,298 +1,483 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
-
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>ScreenLink — Shared Screen</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            brand: { 500: '#6366f1', 600: '#4f46e5' },
-            cyanGlow: '#06b6d4',
-            surface: '#0d121f',
-            bg: '#07090e'
-          },
-          boxShadow: {
-            'glow-brand': '0 0 25px -5px rgba(99, 102, 241, 0.4)',
-            'glow-cyan': '0 0 25px -5px rgba(6, 182, 212, 0.4)',
-          }
-        }
-      }
-    }
-  </script>
+  <title>ScreenLink — Shared Screen & Code</title>
   <style>
-    body {
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
       background-color: #07090e;
       color: #f8fafc;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       touch-action: manipulation;
-      background-image:
-        radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.12) 0px, transparent 50%),
-        radial-gradient(at 100% 100%, rgba(6, 182, 212, 0.08) 0px, transparent 50%);
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(6, 182, 212, 0.1) 0px, transparent 50%);
       background-attachment: fixed;
     }
 
+    .hidden {
+      display: none !important;
+    }
+
+    .view-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+
     .glass-card {
-      background: rgba(13, 18, 31, 0.85);
+      width: 100%;
+      max-width: 420px;
+      background: rgba(13, 18, 31, 0.92);
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
-      border: 1px solid rgba(51, 65, 85, 0.6);
+      border: 1px solid rgba(51, 65, 85, 0.8);
+      border-radius: 1.5rem;
+      padding: 2rem;
+      text-align: center;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 25px -5px rgba(99, 102, 241, 0.25);
     }
 
+    .btn-primary {
+      width: 100%;
+      padding: 0.9rem 1.25rem;
+      background: linear-gradient(135deg, #4f46e5, #06b6d4);
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 0.875rem;
+      border: none;
+      border-radius: 1rem;
+      cursor: pointer;
+      box-shadow: 0 0 20px -3px rgba(99, 102, 241, 0.5);
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+    .btn-primary:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+    }
+    .btn-primary:active {
+      transform: scale(0.98);
+    }
+
+    .btn-secondary {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      background: #1e293b;
+      color: #cbd5e1;
+      font-weight: 600;
+      font-size: 0.75rem;
+      border: 1px solid #334155;
+      border-radius: 1rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .btn-secondary:hover {
+      background: #334155;
+      color: #ffffff;
+    }
+
+    .input-field {
+      width: 100%;
+      padding: 0.85rem 1rem;
+      background: #070a12;
+      border: 1px solid #334155;
+      border-radius: 1rem;
+      color: #ffffff;
+      font-size: 0.875rem;
+      font-weight: 600;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .input-field:focus {
+      border-color: #6366f1;
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
+    }
+
+    /* Radar Pulse */
     @keyframes radarWave {
-      0% {
-        transform: scale(0.8);
-        opacity: 0.9;
-      }
-
-      100% {
-        transform: scale(2.3);
-        opacity: 0;
-      }
+      0% { transform: scale(0.8); opacity: 0.9; }
+      100% { transform: scale(2.3); opacity: 0; }
     }
-
     .radar-pulse {
       animation: radarWave 2.4s cubic-bezier(0, 0.2, 0.8, 1) infinite;
     }
 
-    #canvas-wrapper {
+    /* Main Viewer Layout */
+    #view-connected {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: #000000;
+    }
+
+    .viewer-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.65rem 1rem;
+      background: rgba(9, 13, 23, 0.98);
+      border-bottom: 1px solid #1e293b;
+      z-index: 20;
+      flex-shrink: 0;
+    }
+
+    .viewer-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+    @media (min-width: 768px) {
+      .viewer-content {
+        flex-direction: row;
+      }
+    }
+
+    .screen-area {
+      flex: 1;
+      position: relative;
       display: flex;
       align-items: center;
       justify-content: center;
+      background: #000000;
+      overflow: hidden;
+      min-width: 0;
+      height: 55%;
+    }
+    @media (min-width: 768px) {
+      .screen-area {
+        height: 100%;
+      }
+    }
+
+    #canvas-wrapper {
       width: 100%;
       height: 100%;
-      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     canvas {
       max-width: 100%;
       max-height: 100%;
       object-fit: contain;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.9);
+    }
+
+    /* Sidebar */
+    .chat-sidebar {
+      width: 100%;
+      height: 45%;
+      background: #0b0f1a;
+      border-top: 1px solid #1e293b;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      z-index: 30;
+    }
+    @media (min-width: 768px) {
+      .chat-sidebar {
+        width: 380px;
+        height: 100%;
+        border-top: none;
+        border-left: 1px solid #1e293b;
+      }
+    }
+
+    .sidebar-header {
+      padding: 0.75rem 1rem;
+      background: #070a13;
+      border-bottom: 1px solid #1e293b;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .messages-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .msg-card {
+      padding: 0.75rem;
+      background: #070a13;
+      border: 1px solid #1e293b;
+      border-radius: 1rem;
+      font-size: 0.75rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+    }
+
+    .msg-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.65rem;
+      color: #94a3b8;
+      font-family: monospace;
+      margin-bottom: 0.5rem;
+    }
+
+    .tag-badge {
+      padding: 0.15rem 0.4rem;
+      border-radius: 0.375rem;
+      background: rgba(99, 102, 241, 0.2);
+      color: #a5b4fc;
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 0.6rem;
+      border: 1px solid rgba(99, 102, 241, 0.35);
+    }
+
+    .code-box {
+      position: relative;
+      margin-top: 0.35rem;
+    }
+
+    pre code {
+      display: block;
+      padding: 0.65rem;
+      background: #030408;
+      border: 1px solid #1e293b;
+      border-radius: 0.75rem;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.7rem;
+      color: #6ee7b7;
+      overflow-x: auto;
+      max-height: 14rem;
+      user-select: all;
+      line-height: 1.5;
+    }
+
+    .copy-btn {
+      position: absolute;
+      top: 0.4rem;
+      right: 0.4rem;
+      padding: 0.2rem 0.5rem;
+      background: #1e293b;
+      color: #e2e8f0;
+      border: 1px solid #334155;
+      border-radius: 0.5rem;
+      font-size: 0.65rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .copy-btn:hover {
+      background: #334155;
+    }
+
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(99, 102, 241, 0.4);
+      border-radius: 4px;
     }
   </style>
 </head>
+<body>
 
-<body class="min-h-screen flex flex-col justify-between selection:bg-indigo-500/30">
-
-  <!-- Host Announcement Banner -->
-  <div id="announcement-banner"
-    class="hidden fixed top-4 left-4 right-4 max-w-lg mx-auto z-50 p-4 bg-[#0d1424]/95 border border-indigo-500/60 rounded-3xl shadow-2xl backdrop-blur-xl transform transition-all duration-300 ring-1 ring-indigo-500/30">
-    <div class="flex items-start gap-3.5">
-      <div class="p-2.5 bg-indigo-500/20 text-indigo-300 rounded-2xl shrink-0 mt-0.5 shadow-inner">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-            d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
-        </svg>
-      </div>
-      <div class="flex-1 min-w-0">
-        <div class="flex items-center justify-between gap-2">
-          <span class="text-[11px] font-extrabold uppercase tracking-wider text-indigo-300">Host Announcement</span>
-          <span id="announcement-time" class="text-[10px] text-slate-400 font-mono"></span>
-        </div>
-        <p id="announcement-text" class="text-sm text-white font-semibold mt-1 break-words leading-relaxed"></p>
-      </div>
-      <button onclick="document.getElementById('announcement-banner').classList.add('hidden')"
-        class="text-slate-400 hover:text-white p-1 rounded-lg">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
-    </div>
-  </div>
-
-  <!-- VIEW 1: REQUEST ACCESS (Mobile & Desktop First) -->
-  <div id="view-request" class="flex-1 flex flex-col items-center justify-center p-4 sm:p-6">
-    <div class="w-full max-w-sm glass-card rounded-3xl p-6 sm:p-8 shadow-2xl text-center relative overflow-hidden">
-      <div class="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none"></div>
-
-      <div
-        class="inline-flex p-4 bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-500 rounded-3xl shadow-glow-brand text-white mb-4">
-        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-            d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-        </svg>
+  <!-- VIEW 1: REQUEST ACCESS (Default initial state) -->
+  <div id="view-request" class="view-container">
+    <div class="glass-card">
+      <div style="display:inline-flex; padding:0.85rem; background:linear-gradient(135deg, #4f46e5, #06b6d4); border-radius:1.25rem; color:#fff; margin-bottom:1rem; box-shadow:0 0 25px rgba(99,102,241,0.4);">
+        <svg style="width:2rem; height:2rem;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
       </div>
 
-      <h1
-        class="text-2xl font-extrabold text-white tracking-tight bg-gradient-to-r from-white via-slate-100 to-indigo-200 bg-clip-text text-transparent">
+      <h1 style="font-size:1.5rem; font-weight:800; color:#ffffff; letter-spacing:-0.025em; margin-bottom:0.25rem;">
         ScreenLink
       </h1>
-      <p class="text-xs text-slate-400 mt-1 mb-6">Connect to Shared Screen</p>
+      <p style="font-size:0.75rem; color:#94a3b8; margin-bottom:1.5rem;">Connect to Screen & Code Stream</p>
 
-      <form id="form-request" onsubmit="handleRequestAccess(event)" class="space-y-4 text-left">
+      <form id="form-request" onsubmit="handleRequestAccess(event)" style="display:flex; flex-direction:column; gap:1rem; text-align:left;">
         <div>
-          <label class="block text-xs font-bold text-slate-300 mb-1.5 uppercase tracking-wider">Device / Viewer
-            Name</label>
-          <div class="relative">
-            <input type="text" id="input-name" required maxlength="40" placeholder="e.g. Vinay's iPhone, Student Laptop"
-              class="w-full px-4 py-3.5 bg-[#070a12]/90 border border-slate-700/80 rounded-2xl text-sm font-semibold text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition shadow-inner" />
-          </div>
+          <label style="display:block; font-size:0.7rem; font-weight:700; color:#cbd5e1; text-transform:uppercase; margin-bottom:0.4rem; letter-spacing:0.05em;">
+            Device Name
+          </label>
+          <input
+            type="text"
+            id="input-name"
+            required
+            maxlength="40"
+            placeholder="e.g. My Phone, Student Laptop"
+            class="input-field"
+          />
         </div>
 
-        <button type="submit" id="btn-request"
-          class="w-full py-4 px-4 bg-gradient-to-r from-indigo-600 via-indigo-500 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 active:scale-[0.99] text-white font-bold text-sm rounded-2xl shadow-glow-brand transition duration-150 cursor-pointer flex items-center justify-center gap-2">
-          <span>Request Screen Access</span>
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-          </svg>
+        <button type="submit" id="btn-request" class="btn-primary">
+          <span>Connect to Host</span>
+          <svg style="width:1rem; height:1rem;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
         </button>
       </form>
 
-      <div
-        class="mt-6 pt-5 border-t border-slate-800/80 flex items-center justify-center gap-2 text-[11px] text-slate-400">
-        <svg class="w-3.5 h-3.5 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-            d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-        </svg>
-        <span>Host Authorization Protected • View-Only</span>
+      <div style="margin-top:1.25rem; padding-top:1rem; border-top:1px solid #1e293b; display:flex; align-items:center; justify-content:center; gap:0.4rem; font-size:0.7rem; color:#94a3b8;">
+        <svg style="width:0.85rem; height:0.85rem; color:#34d399;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+        <span>Host Authorization Protected</span>
       </div>
     </div>
   </div>
 
   <!-- VIEW 2: WAITING FOR APPROVAL -->
-  <div id="view-waiting" class="hidden flex-1 flex flex-col items-center justify-center p-4 sm:p-6">
-    <div class="w-full max-w-sm glass-card rounded-3xl p-8 shadow-2xl text-center relative overflow-hidden">
-      <div class="relative w-24 h-24 mx-auto mb-6 flex items-center justify-center">
-        <div class="absolute inset-0 rounded-full bg-amber-500/20 radar-pulse"></div>
-        <div class="absolute inset-2 rounded-full bg-amber-500/30 radar-pulse" style="animation-delay: 0.8s"></div>
-        <div
-          class="p-5 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-3xl relative z-10 shadow-inner">
-          <svg class="w-8 h-8 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
+  <div id="view-waiting" class="view-container hidden">
+    <div class="glass-card">
+      <div style="position:relative; width:5rem; height:5rem; margin:0 auto 1.25rem; display:flex; align-items:center; justify-content:center;">
+        <div class="radar-pulse" style="position:absolute; inset:0; border-radius:9999px; background:rgba(245,158,11,0.2);"></div>
+        <div style="padding:1rem; background:rgba(245,158,11,0.15); border:1px solid rgba(245,158,11,0.4); color:#fbbf24; border-radius:1.25rem; position:relative; z-index:10;">
+          <svg style="width:1.75rem; height:1.75rem; animation:spin 1.5s linear infinite;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
         </div>
       </div>
 
-      <h2 class="text-xl font-extrabold text-white mb-2 tracking-tight">Waiting for Host Approval</h2>
-      <p class="text-xs text-slate-300 leading-relaxed mb-6">
-        Your access request was sent to the host. Screen streaming will start the moment the host clicks <strong
-          class="text-amber-400">Approve</strong>.
+      <h2 style="font-size:1.25rem; font-weight:800; color:#ffffff; margin-bottom:0.4rem;">Waiting for Host</h2>
+      <p style="font-size:0.75rem; color:#cbd5e1; line-height:1.5; margin-bottom:1.25rem;">
+        Request sent to host. Streaming starts immediately when the host clicks <strong style="color:#fbbf24;">Approve</strong>.
       </p>
 
-      <div class="p-3 bg-[#070a12] border border-slate-800 rounded-2xl text-xs text-slate-400 font-mono mb-6">
-        Device: <span id="waiting-device-name" class="text-slate-100 font-sans font-bold"></span>
+      <div style="padding:0.6rem; background:#070a12; border:1px solid #1e293b; border-radius:0.75rem; font-size:0.75rem; color:#94a3b8; font-family:monospace; margin-bottom:1.25rem;">
+        Device: <span id="waiting-device-name" style="color:#ffffff; font-weight:700;"></span>
       </div>
 
-      <button onclick="handleCancelRequest()"
-        class="w-full py-3 px-4 bg-slate-800/90 hover:bg-slate-700 active:bg-slate-800 text-slate-300 font-semibold text-xs rounded-2xl border border-slate-700/80 transition cursor-pointer">
+      <button onclick="handleCancelRequest()" class="btn-secondary">
         Cancel Request
       </button>
     </div>
   </div>
 
-  <!-- VIEW 3: APPROVED & CONNECTED SCREEN VIEWER -->
-  <div id="view-connected" class="hidden flex-1 flex flex-col h-screen overflow-hidden">
-    <!-- Viewer Top Floating Bar -->
-    <header
-      class="flex items-center justify-between px-4 py-2.5 bg-[#090d17]/95 border-b border-slate-800 backdrop-blur-xl z-20 shrink-0">
-      <div class="flex items-center gap-3">
-        <div class="p-1.5 bg-gradient-to-tr from-indigo-600 to-cyan-600 rounded-xl text-white shadow-sm">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-          </svg>
+  <!-- VIEW 3: APPROVED & CONNECTED SCREEN & CODE VIEWER -->
+  <div id="view-connected" class="hidden">
+    <!-- Header -->
+    <header class="viewer-header">
+      <div style="display:flex; align-items:center; gap:0.6rem;">
+        <div style="padding:0.35rem; background:linear-gradient(135deg, #4f46e5, #06b6d4); border-radius:0.6rem; color:#fff;">
+          <svg style="width:1rem; height:1rem;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
         </div>
         <div>
-          <span class="text-sm font-extrabold text-white tracking-tight">ScreenLink</span>
-          <div class="flex items-center gap-1.5">
-            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span id="stream-status" class="text-[10px] text-emerald-400 font-bold tracking-wide uppercase">Live
-              Stream</span>
+          <span style="font-size:0.875rem; font-weight:800; color:#ffffff;">ScreenLink</span>
+          <div style="display:flex; align-items:center; gap:0.3rem;">
+            <span style="width:0.4rem; height:0.4rem; border-radius:9999px; background:#10b981;"></span>
+            <span id="stream-status" style="font-size:0.65rem; color:#34d399; font-weight:700; text-transform:uppercase;">Connected Live</span>
           </div>
         </div>
       </div>
 
-      <div class="flex items-center gap-2">
-        <button onclick="toggleFullscreen()"
-          class="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/90 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 transition"
-          title="Toggle Fullscreen">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-          </svg>
-          <span class="hidden sm:inline">Fullscreen</span>
+      <div style="display:flex; align-items:center; gap:0.4rem;">
+        <button id="btn-toggle-sidebar" onclick="toggleSidebar()" style="position:relative; display:inline-flex; align-items:center; gap:0.4rem; padding:0.4rem 0.75rem; background:rgba(99,102,241,0.2); color:#a5b4fc; border:1px solid rgba(99,102,241,0.4); border-radius:0.6rem; font-size:0.75rem; font-weight:700; cursor:pointer;">
+          <svg style="width:0.875rem; height:0.875rem;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+          <span id="sidebar-btn-text">Live Code & Notes</span>
+          <span id="unread-badge" class="hidden" style="padding:0.1rem 0.45rem; background:#6366f1; color:#ffffff; font-size:0.65rem; font-weight:800; border-radius:9999px; box-shadow:0 0 10px rgba(99,102,241,0.8);">0</span>
         </button>
-
-        <button onclick="handleDisconnect()"
-          class="flex items-center gap-1 px-3 py-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 text-xs font-bold rounded-xl border border-rose-500/30 transition">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-          </svg>
-          <span>Exit</span>
+        <button onclick="toggleFullscreen()" style="padding:0.4rem 0.75rem; background:#1e293b; color:#cbd5e1; border:1px solid #334155; border-radius:0.6rem; font-size:0.75rem; font-weight:600; cursor:pointer;">
+          Fullscreen
+        </button>
+        <button onclick="handleDisconnect()" style="padding:0.4rem 0.75rem; background:rgba(244,63,94,0.2); color:#fda4af; border:1px solid rgba(244,63,94,0.4); border-radius:0.6rem; font-size:0.75rem; font-weight:700; cursor:pointer;">
+          Exit
         </button>
       </div>
     </header>
 
-    <!-- Canvas Frame Container -->
-    <main class="flex-1 relative flex items-center justify-center bg-black overflow-hidden p-1 sm:p-2">
-      <!-- Waiting Frame Placeholder -->
-      <div id="screen-placeholder" class="text-center p-8 glass-card rounded-3xl max-w-sm mx-auto shadow-2xl">
-        <div class="inline-flex p-4 bg-emerald-500/10 text-emerald-400 rounded-2xl mb-3 shadow-inner">
-          <svg class="w-8 h-8 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-          </svg>
+    <!-- Main Content Area: Left Screen + Right Always-Visible Sidebar -->
+    <div class="viewer-content">
+      <!-- Screen Canvas Area -->
+      <main class="screen-area">
+        <div id="screen-placeholder" style="text-align:center; padding:2rem; background:rgba(13,18,31,0.85); border:1px solid #334155; border-radius:1.25rem; max-width:320px;">
+          <div style="display:inline-flex; padding:0.75rem; background:rgba(99,102,241,0.15); color:#a5b4fc; border-radius:1rem; margin-bottom:0.75rem;">
+            <svg style="width:1.75rem; height:1.75rem;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+          </div>
+          <h3 style="font-size:0.875rem; font-weight:700; color:#fff;">Live Session Connected</h3>
+          <p style="font-size:0.75rem; color:#94a3b8; margin-top:0.4rem;">
+            Source code and notes appear in the sidebar on the right.
+          </p>
         </div>
-        <h3 class="text-sm font-bold text-white">Connected to Host Screen</h3>
-        <p class="text-xs text-slate-400 mt-1.5">Receiving live hardware framebuffers...</p>
-      </div>
 
-      <div id="canvas-wrapper" class="w-full h-full flex items-center justify-center">
-        <canvas id="screen-canvas" class="hidden"></canvas>
-      </div>
-    </main>
+        <div id="canvas-wrapper">
+          <canvas id="screen-canvas" class="hidden"></canvas>
+        </div>
+      </main>
+
+      <!-- Right Sidebar: Live Chat & Code Feed -->
+      <aside id="chat-sidebar" class="chat-sidebar">
+        <div class="sidebar-header">
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <div style="padding:0.25rem 0.4rem; background:rgba(99,102,241,0.2); color:#a5b4fc; border-radius:0.4rem;">
+              <svg style="width:0.875rem; height:0.875rem;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
+            </div>
+            <div>
+              <h3 style="font-size:0.75rem; font-weight:700; color:#ffffff;">Live Code & Notes</h3>
+              <p style="font-size:0.65rem; color:#94a3b8;">Real-time host stream</p>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <span style="padding:0.15rem 0.4rem; border-radius:0.35rem; background:rgba(16,185,129,0.2); color:#6ee7b7; font-family:monospace; font-size:0.65rem; font-weight:700; border:1px solid rgba(16,185,129,0.3);">
+              SYNCED
+            </span>
+            <button onclick="toggleSidebar(false)" style="padding:0.2rem 0.4rem; background:transparent; border:none; color:#94a3b8; cursor:pointer; font-size:0.85rem; border-radius:0.35rem;" title="Close Sidebar">
+              ✕
+            </button>
+          </div>
+        </div>
+
+        <div id="chat-messages-container" class="messages-container">
+          <div id="chat-empty-state" style="text-align:center; padding:3rem 1rem; color:#64748b; font-size:0.75rem;">
+            <svg style="width:2rem; height:2rem; margin:0 auto 0.5rem; opacity:0.4;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+            <span>Waiting for host to send code snippets or notes...</span>
+          </div>
+        </div>
+      </aside>
+    </div>
   </div>
 
   <!-- VIEW 4: REJECTED -->
-  <div id="view-rejected" class="hidden flex-1 flex flex-col items-center justify-center p-4 sm:p-6">
-    <div class="w-full max-w-sm glass-card rounded-3xl p-8 shadow-2xl text-center">
-      <div
-        class="w-16 h-16 mx-auto mb-4 p-4 bg-rose-500/10 border border-rose-500/30 text-rose-400 rounded-2xl flex items-center justify-center shadow-inner">
-        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-            d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-        </svg>
+  <div id="view-rejected" class="view-container hidden">
+    <div class="glass-card">
+      <div style="width:3.5rem; height:3.5rem; margin:0 auto 1rem; padding:0.75rem; background:rgba(244,63,94,0.15); border:1px solid rgba(244,63,94,0.4); color:#fb7185; border-radius:1rem; display:flex; align-items:center; justify-content:center;">
+        <svg style="width:1.75rem; height:1.75rem;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
       </div>
-      <h2 class="text-xl font-extrabold text-white mb-2">Access Rejected</h2>
-      <p class="text-xs text-slate-300 leading-relaxed mb-6">
-        The host declined your access request. You may try again or request from another device.
-      </p>
-      <button onclick="showView('view-request')"
-        class="w-full py-3.5 px-4 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-bold text-xs rounded-2xl shadow-glow-brand transition">
-        Try Again
-      </button>
+      <h2 style="font-size:1.25rem; font-weight:800; color:#fff; margin-bottom:0.4rem;">Access Rejected</h2>
+      <p style="font-size:0.75rem; color:#cbd5e1; margin-bottom:1.25rem;">The host declined your connection request.</p>
+      <button onclick="showView('view-request')" class="btn-primary">Try Again</button>
     </div>
   </div>
 
-  <!-- VIEW 5: DISCONNECTED / STOPPED -->
-  <div id="view-ended" class="hidden flex-1 flex flex-col items-center justify-center p-4 sm:p-6">
-    <div class="w-full max-w-sm glass-card rounded-3xl p-8 shadow-2xl text-center">
-      <div
-        class="w-16 h-16 mx-auto mb-4 p-4 bg-slate-800 text-slate-400 rounded-2xl flex items-center justify-center shadow-inner">
-        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-        </svg>
+  <!-- VIEW 5: DISCONNECTED -->
+  <div id="view-ended" class="view-container hidden">
+    <div class="glass-card">
+      <div style="width:3.5rem; height:3.5rem; margin:0 auto 1rem; padding:0.75rem; background:#1e293b; color:#94a3b8; border-radius:1rem; display:flex; align-items:center; justify-content:center;">
+        <svg style="width:1.75rem; height:1.75rem;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
       </div>
-      <h2 class="text-xl font-extrabold text-white mb-2">Sharing Session Ended</h2>
-      <p class="text-xs text-slate-400 leading-relaxed mb-6">
-        The host stopped screen sharing or your viewer session was disconnected.
-      </p>
-      <button onclick="showView('view-request')"
-        class="w-full py-3.5 px-4 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-bold text-xs rounded-2xl shadow-glow-brand transition">
-        Reconnect
-      </button>
+      <h2 style="font-size:1.25rem; font-weight:800; color:#fff; margin-bottom:0.4rem;">Session Ended</h2>
+      <p style="font-size:0.75rem; color:#94a3b8; margin-bottom:1.25rem;">Your session was disconnected from the host.</p>
+      <button onclick="showView('view-request')" class="btn-primary">Reconnect</button>
     </div>
   </div>
 
-  <!-- VIEWER APPLICATION LOGIC -->
+  <!-- LOGIC SCRIPT -->
   <script>
     let socket = null;
     let clientId = localStorage.getItem('screenlink_client_id');
@@ -303,9 +488,9 @@
 
     const defaultInput = document.getElementById('input-name');
     const savedName = localStorage.getItem('screenlink_display_name');
-    if (savedName) {
+    if (savedName && defaultInput) {
       defaultInput.value = savedName;
-    } else {
+    } else if (defaultInput) {
       const ua = navigator.userAgent;
       if (/iPhone/i.test(ua)) defaultInput.value = "My iPhone";
       else if (/iPad/i.test(ua)) defaultInput.value = "My iPad";
@@ -316,8 +501,46 @@
     }
 
     const canvas = document.getElementById('screen-canvas');
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas ? canvas.getContext('2d', { alpha: false, desynchronized: true }) : null;
+    if (ctx) {
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+    }
     const placeholder = document.getElementById('screen-placeholder');
+
+    let unreadCount = 0;
+
+    function isSidebarVisible() {
+      const sidebar = document.getElementById('chat-sidebar');
+      return sidebar && !sidebar.classList.contains('hidden');
+    }
+
+    function updateUnreadBadge() {
+      const badge = document.getElementById('unread-badge');
+      if (!badge) return;
+      if (!isSidebarVisible() && unreadCount > 0) {
+        badge.textContent = unreadCount;
+        badge.classList.remove('hidden');
+      } else {
+        badge.classList.add('hidden');
+      }
+    }
+
+    function toggleSidebar(forceState) {
+      const sidebar = document.getElementById('chat-sidebar');
+      if (!sidebar) return;
+      if (typeof forceState === 'boolean') {
+        if (forceState) sidebar.classList.remove('hidden');
+        else sidebar.classList.add('hidden');
+      } else {
+        sidebar.classList.toggle('hidden');
+      }
+
+      if (isSidebarVisible()) {
+        unreadCount = 0;
+      }
+      updateUnreadBadge();
+    }
 
     function showView(viewId) {
       const views = ['view-request', 'view-waiting', 'view-connected', 'view-rejected', 'view-ended'];
@@ -359,21 +582,100 @@
           const data = JSON.parse(event.data);
           if (data.type === 'status') {
             handleStatusChange(data.state);
+          } else if (data.type === 'chat_message' && data.chatPayload) {
+            appendMessageToSidebar(data.chatPayload);
+          } else if (data.type === 'chat_history' && Array.isArray(data.history)) {
+            data.history.reverse().forEach(msg => appendMessageToSidebar(msg, true));
           } else if (data.type === 'announcement') {
-            showAnnouncement(data.message, data.sent_at);
+            appendMessageToSidebar({
+              id: 'ann-' + Date.now(),
+              type: 'announcement',
+              message: data.message,
+              sentAt: data.sent_at || '',
+              isCode: false
+            });
           }
         } catch (err) {
           console.error("Invalid text message:", err);
         }
       };
 
-      socket.onclose = () => {
-        // Socket closed
-      };
+      socket.onclose = () => {};
+      socket.onerror = (err) => { console.error("WebSocket error:", err); };
+    }
 
-      socket.onerror = (err) => {
-        console.error("WebSocket error:", err);
-      };
+    function appendMessageToSidebar(msg, isHistory) {
+      if (!isSidebarVisible() && !isHistory) {
+        unreadCount++;
+        updateUnreadBadge();
+      }
+
+      const container = document.getElementById('chat-messages-container');
+      const empty = document.getElementById('chat-empty-state');
+      if (empty) empty.classList.add('hidden');
+      if (!container) return;
+
+      const card = document.createElement('div');
+      card.className = "msg-card";
+
+      const header = document.createElement('div');
+      header.className = "msg-header";
+
+      const leftTag = document.createElement('div');
+      leftTag.style.display = "flex";
+      leftTag.style.alignItems = "center";
+      leftTag.style.gap = "0.35rem";
+
+      const tag = document.createElement('span');
+      tag.className = "tag-badge";
+      tag.textContent = msg.isCode ? (msg.language || 'CODE') : 'HOST';
+      leftTag.appendChild(tag);
+
+      if (msg.title) {
+        const titleSpan = document.createElement('span');
+        titleSpan.style.color = "#ffffff";
+        titleSpan.style.fontWeight = "700";
+        titleSpan.style.fontFamily = "sans-serif";
+        titleSpan.textContent = msg.title;
+        leftTag.appendChild(titleSpan);
+      }
+      header.appendChild(leftTag);
+
+      const timeSpan = document.createElement('span');
+      timeSpan.textContent = msg.sentAt || '';
+      header.appendChild(timeSpan);
+      card.appendChild(header);
+
+      if (msg.isCode) {
+        const preWrap = document.createElement('div');
+        preWrap.className = "code-box";
+
+        const pre = document.createElement('pre');
+        const code = document.createElement('code');
+        code.textContent = msg.message;
+        pre.appendChild(code);
+        preWrap.appendChild(pre);
+
+        const copyBtn = document.createElement('button');
+        copyBtn.className = "copy-btn";
+        copyBtn.innerHTML = `<span>📋 Copy</span>`;
+        copyBtn.onclick = () => {
+          navigator.clipboard.writeText(msg.message);
+          copyBtn.innerHTML = `<span style="color:#34d399;">✓ Copied!</span>`;
+          setTimeout(() => { copyBtn.innerHTML = `<span>📋 Copy</span>`; }, 2000);
+        };
+        preWrap.appendChild(copyBtn);
+        card.appendChild(preWrap);
+      } else {
+        const p = document.createElement('p');
+        p.style.color = "#e2e8f0";
+        p.style.lineHeight = "1.5";
+        p.style.wordBreak = "break-word";
+        p.textContent = msg.message;
+        card.appendChild(p);
+      }
+
+      container.insertBefore(card, container.firstChild);
     }
 
     function handleBinaryFrame(buffer) {
@@ -390,15 +692,17 @@
       const blob = new Blob([jpegData], { type: 'image/jpeg' });
 
       if (typeof createImageBitmap === 'function') {
-        createImageBitmap(blob).then(bitmap => {
+        createImageBitmap(blob, { imageOrientation: 'none', premultiplyAlpha: 'none' }).then(bitmap => {
           if (canvas.width !== width || canvas.height !== height) {
             canvas.width = width;
             canvas.height = height;
+            const statusEl = document.getElementById('stream-status');
+            if (statusEl) statusEl.textContent = `${width}×${height} • HD Live`;
           }
           ctx.drawImage(bitmap, 0, 0);
           bitmap.close();
 
-          if (!placeholder.classList.contains('hidden')) {
+          if (placeholder && !placeholder.classList.contains('hidden')) {
             placeholder.classList.add('hidden');
             canvas.classList.remove('hidden');
           }
@@ -417,10 +721,12 @@
         if (canvas.width !== width || canvas.height !== height) {
           canvas.width = width;
           canvas.height = height;
+          const statusEl = document.getElementById('stream-status');
+          if (statusEl) statusEl.textContent = `${width}×${height} • HD Live`;
         }
         ctx.drawImage(img, 0, 0);
         URL.revokeObjectURL(url);
-        if (!placeholder.classList.contains('hidden')) {
+        if (placeholder && !placeholder.classList.contains('hidden')) {
           placeholder.classList.add('hidden');
           canvas.classList.remove('hidden');
         }
@@ -449,12 +755,13 @@
     }
 
     function handleRequestAccess(e) {
-      e.preventDefault();
-      const name = defaultInput.value.trim();
+      if (e) e.preventDefault();
+      const name = defaultInput ? defaultInput.value.trim() : "Viewer";
       if (!name) return;
 
       localStorage.setItem('screenlink_display_name', name);
-      document.getElementById('waiting-device-name').textContent = name;
+      const waitingNameEl = document.getElementById('waiting-device-name');
+      if (waitingNameEl) waitingNameEl.textContent = name;
       showView('view-waiting');
       connectWebSocket(name);
     }
@@ -472,21 +779,10 @@
       showView('view-ended');
     }
 
-    function showAnnouncement(message, time) {
-      const banner = document.getElementById('announcement-banner');
-      document.getElementById('announcement-text').textContent = message;
-      document.getElementById('announcement-time').textContent = time || '';
-      banner.classList.remove('hidden');
-
-      setTimeout(() => {
-        banner.classList.add('hidden');
-      }, 15000);
-    }
-
     function toggleFullscreen() {
       if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen().catch(err => {
-          console.log("Fullscreen request error:", err);
+          console.log("Fullscreen error:", err);
         });
       } else {
         if (document.exitFullscreen) {
@@ -496,5 +792,4 @@
     }
   </script>
 </body>
-
 </html>

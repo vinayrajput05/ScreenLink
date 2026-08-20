@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"fmt"
 	"sync"
+	"time"
 
 	"lanmirror/internal/capture"
 	"lanmirror/internal/clients"
@@ -44,17 +45,12 @@ type App struct {
 	server         *server.Server
 	streamer       *capture.Streamer
 	serverMu       sync.Mutex
-	isSharing      bool
+	isServerActive bool
+	isScreenActive bool
 	currentPort    int
 	currentQuality string
-	announcements  []AnnouncementRecord
-	annMu          sync.Mutex
-}
-
-type AnnouncementRecord struct {
-	ID      string `json:"id"`
-	Message string `json:"message"`
-	SentAt  string `json:"sentAt"`
+	messages       []server.ChatMessage
+	msgMu          sync.Mutex
 }
 
 // NewApp creates a new App application struct
@@ -62,12 +58,52 @@ func NewApp() *App {
 	return &App{
 		currentPort:    8080,
 		currentQuality: "30fps",
+		messages:       make([]server.ChatMessage, 0),
 	}
 }
 
 // startup is called when the app starts.
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	// Auto-start background local server on launch so chat & code sharing is instantly active
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		_, _ = a.ensureServerRunning(a.currentPort)
+	}()
+}
+
+func (a *App) ensureServerRunning(port int) (*server.Server, error) {
+	a.serverMu.Lock()
+	if a.server != nil && a.isServerActive {
+		srv := a.server
+		a.serverMu.Unlock()
+		return srv, nil
+	}
+
+	if port <= 0 {
+		port = 8080
+	}
+	a.currentPort = port
+
+	srv := server.NewServer(port, viewerHTML, a)
+	if err := srv.Start(); err != nil {
+		a.serverMu.Unlock()
+		return nil, fmt.Errorf("failed to start server on port %d: %w", port, err)
+	}
+
+	a.server = srv
+	a.isServerActive = true
+	a.serverMu.Unlock()
+
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "server_state_changed", map[string]interface{}{
+			"status":       "running",
+			"port":         a.currentPort,
+			"screenActive": a.isScreenActive,
+		})
+	}
+
+	return srv, nil
 }
 
 // OnClientStateChanged implements server.ServerCallback
@@ -83,7 +119,14 @@ func (a *App) OnClientStateChanged() {
 func (a *App) GetSharingStatus() bool {
 	a.serverMu.Lock()
 	defer a.serverMu.Unlock()
-	return a.isSharing
+	return a.isServerActive
+}
+
+// IsScreenStreaming returns true if screen capture streamer is actively streaming
+func (a *App) IsScreenStreaming() bool {
+	a.serverMu.Lock()
+	defer a.serverMu.Unlock()
+	return a.isScreenActive
 }
 
 // GetQualityPresets returns stream resolution presets
@@ -149,96 +192,59 @@ func (a *App) GetSystemInfo() SystemInfo {
 	}
 }
 
-// StartSharing starts the local Go HTTP/WS server & screen capture streamer
+// StartSharing starts/ensures local server and screen capture streamer
 func (a *App) StartSharing(port int) (bool, error) {
-	a.serverMu.Lock()
-	if a.isSharing {
-		a.serverMu.Unlock()
-		return true, nil
+	srv, err := a.ensureServerRunning(port)
+	if err != nil {
+		return false, err
 	}
 
-	oldSrv := a.server
-	oldStreamer := a.streamer
-	a.server = nil
-	a.streamer = nil
+	a.serverMu.Lock()
 	quality := a.currentQuality
-	a.serverMu.Unlock()
-
-	if oldStreamer != nil {
-		oldStreamer.Stop()
+	if a.streamer == nil {
+		streamer := capture.NewStreamer(srv)
+		streamer.SetQualityPreset(quality)
+		if err := streamer.Start(); err != nil {
+			a.serverMu.Unlock()
+			return false, fmt.Errorf("failed to start screen capture: %w", err)
+		}
+		a.streamer = streamer
 	}
-	if oldSrv != nil {
-		_ = oldSrv.Stop()
-	}
-
-	if port <= 0 {
-		port = 8080
-	}
-	a.currentPort = port
-
-	srv := server.NewServer(port, viewerHTML, a)
-	if err := srv.Start(); err != nil {
-		return false, fmt.Errorf("failed to start sharing server on port %d: %w", port, err)
-	}
-
-	streamer := capture.NewStreamer(srv)
-	streamer.SetQualityPreset(quality)
-	if err := streamer.Start(); err != nil {
-		_ = srv.Stop()
-		return false, fmt.Errorf("failed to start screen capture streamer: %w", err)
-	}
-
-	a.serverMu.Lock()
-	a.server = srv
-	a.streamer = streamer
-	a.isSharing = true
+	a.isScreenActive = true
 	a.serverMu.Unlock()
 
 	if a.ctx != nil {
 		runtime.EventsEmit(a.ctx, "server_state_changed", map[string]interface{}{
-			"status": "running",
-			"port":   a.currentPort,
+			"status":       "running",
+			"port":         a.currentPort,
+			"screenActive": true,
 		})
 	}
 
 	return true, nil
 }
 
-// StopSharing stops the HTTP/WS server and screen capture streamer
+// StopSharing stops screen capture streaming while keeping the chat/code server running
 func (a *App) StopSharing() error {
 	a.serverMu.Lock()
-	if !a.isSharing {
-		a.serverMu.Unlock()
-		return nil
-	}
-
-	srv := a.server
 	streamer := a.streamer
-	a.server = nil
 	a.streamer = nil
-	a.isSharing = false
+	a.isScreenActive = false
 	a.serverMu.Unlock()
 
 	if streamer != nil {
 		streamer.Stop()
 	}
 
-	var err error
-	if srv != nil {
-		err = srv.Stop()
-	}
-
 	if a.ctx != nil {
 		runtime.EventsEmit(a.ctx, "server_state_changed", map[string]interface{}{
-			"status": "stopped",
-		})
-		runtime.EventsEmit(a.ctx, "clients_updated", ClientsPayload{
-			Pending:   make([]clients.ClientDTO, 0),
-			Connected: make([]clients.ClientDTO, 0),
+			"status":       "running",
+			"port":         a.currentPort,
+			"screenActive": false,
 		})
 	}
 
-	return err
+	return nil
 }
 
 // ApproveClient approves a viewer request
@@ -296,27 +302,89 @@ func (a *App) DisconnectAll() {
 	}
 }
 
-// SendAnnouncement broadcasts a message to all connected viewers
-func (a *App) SendAnnouncement(message string) {
-	a.serverMu.Lock()
-	srv := a.server
-	a.serverMu.Unlock()
+// SendChatMessage broadcasts a text message to all connected viewers (even without screen sharing)
+func (a *App) SendChatMessage(message string) {
+	srv, _ := a.ensureServerRunning(a.currentPort)
+
+	msg := server.ChatMessage{
+		ID:      fmt.Sprintf("msg-%d", time.Now().UnixNano()),
+		Type:    "chat",
+		Message: message,
+		IsCode:  false,
+		SentAt:  time.Now().Format("15:04:05"),
+		Sender:  "Host",
+	}
 
 	if srv != nil {
-		srv.BroadcastAnnouncement(message)
+		srv.BroadcastChatMessage(msg)
 	}
 
-	a.annMu.Lock()
-	record := AnnouncementRecord{
-		ID:      fmt.Sprintf("ann-%d", len(a.announcements)+1),
-		Message: message,
-		SentAt:  "Just now",
-	}
-	a.announcements = append([]AnnouncementRecord{record}, a.announcements...)
-	a.annMu.Unlock()
+	a.msgMu.Lock()
+	a.messages = append([]server.ChatMessage{msg}, a.messages...)
+	a.msgMu.Unlock()
 
 	if a.ctx != nil {
-		runtime.EventsEmit(a.ctx, "announcements_updated", a.announcements)
+		runtime.EventsEmit(a.ctx, "messages_updated", a.messages)
+	}
+}
+
+// SendCodeSnippet broadcasts multi-line source code to all connected viewers (even without screen sharing)
+func (a *App) SendCodeSnippet(title string, code string, language string) {
+	srv, _ := a.ensureServerRunning(a.currentPort)
+
+	if title == "" {
+		title = "Code Snippet"
+	}
+	if language == "" {
+		language = "text"
+	}
+
+	msg := server.ChatMessage{
+		ID:       fmt.Sprintf("code-%d", time.Now().UnixNano()),
+		Type:     "code",
+		Title:    title,
+		Message:  code,
+		Language: language,
+		IsCode:   true,
+		SentAt:   time.Now().Format("15:04:05"),
+		Sender:   "Host",
+	}
+
+	if srv != nil {
+		srv.BroadcastChatMessage(msg)
+	}
+
+	a.msgMu.Lock()
+	a.messages = append([]server.ChatMessage{msg}, a.messages...)
+	a.msgMu.Unlock()
+
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "messages_updated", a.messages)
+	}
+}
+
+// SendAnnouncement broadcasts an announcement banner
+func (a *App) SendAnnouncement(message string) {
+	a.SendChatMessage(message)
+}
+
+// GetChatMessages returns the broadcasted chat and code messages
+func (a *App) GetChatMessages() []server.ChatMessage {
+	a.msgMu.Lock()
+	defer a.msgMu.Unlock()
+	res := make([]server.ChatMessage, len(a.messages))
+	copy(res, a.messages)
+	return res
+}
+
+// ClearChatHistory clears stored chat messages
+func (a *App) ClearChatHistory() {
+	a.msgMu.Lock()
+	a.messages = make([]server.ChatMessage, 0)
+	a.msgMu.Unlock()
+
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "messages_updated", a.messages)
 	}
 }
 

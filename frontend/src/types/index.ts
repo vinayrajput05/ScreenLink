@@ -16,6 +16,17 @@ export interface QualityPreset {
   targetFps: number;
 }
 
+export interface ChatMessage {
+  id: string;
+  type: 'chat' | 'code' | 'announcement' | string;
+  title?: string;
+  message: string;
+  language?: string;
+  isCode: boolean;
+  sentAt: string;
+  sender?: string;
+}
+
 export interface PendingRequest {
   id: string;
   displayName: string;
