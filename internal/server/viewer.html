@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>LANMirror — Shared Screen</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 500: '#6366f1', 600: '#4f46e5' },
+            surface: '#111726',
+            bg: '#0a0d14'
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      background-color: #0a0d14;
+      color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      touch-action: manipulation;
+    }
+    .glass-card {
+      background: rgba(17, 23, 38, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(51, 65, 85, 0.6);
+    }
+    @keyframes pulseGlow {
+      0%, 100% { transform: scale(1); opacity: 0.8; }
+      50% { transform: scale(1.08); opacity: 0.4; }
+    }
+    .pulse-radar {
+      animation: pulseGlow 2.5s infinite ease-in-out;
+    }
+    #canvas-wrapper {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      background: #000;
+    }
+    canvas {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-indigo-500/30">
+
+  <!-- Host Announcement Banner -->
+  <div id="announcement-banner" class="hidden fixed top-4 left-4 right-4 max-w-lg mx-auto z-50 p-4 bg-indigo-950/95 border border-indigo-500/60 rounded-2xl shadow-2xl backdrop-blur-lg transform transition-all duration-300">
+    <div class="flex items-start gap-3">
+      <div class="p-2 bg-indigo-500/20 text-indigo-300 rounded-xl shrink-0 mt-0.5">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"/></svg>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs font-bold uppercase tracking-wider text-indigo-300">Host Announcement</span>
+          <span id="announcement-time" class="text-[10px] text-slate-400 font-mono"></span>
+        </div>
+        <p id="announcement-text" class="text-sm text-white font-medium mt-1 break-words"></p>
+      </div>
+      <button onclick="document.getElementById('announcement-banner').classList.add('hidden')" class="text-slate-400 hover:text-white p-1">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- VIEW 1: REQUEST ACCESS -->
+  <div id="view-request" class="flex-1 flex flex-col items-center justify-center p-4">
+    <div class="w-full max-w-sm glass-card rounded-3xl p-6 sm:p-8 shadow-2xl text-center">
+      <div class="inline-flex p-3.5 bg-gradient-to-tr from-indigo-600 to-indigo-500 rounded-2xl shadow-lg shadow-indigo-500/25 text-white mb-4">
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+      </div>
+
+      <h1 class="text-2xl font-bold text-white tracking-tight">LANMirror</h1>
+      <p class="text-xs text-slate-400 mt-1 mb-6">Connect to Host Screen</p>
+
+      <form id="form-request" onsubmit="handleRequestAccess(event)" class="space-y-4 text-left">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">Your Device Name</label>
+          <input
+            type="text"
+            id="input-name"
+            required
+            maxlength="40"
+            placeholder="e.g. Vinay's iPhone, Student Laptop"
+            class="w-full px-4 py-3 bg-slate-900/90 border border-slate-700/80 rounded-xl text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition font-medium"
+          />
+        </div>
+
+        <button
+          type="submit"
+          id="btn-request"
+          class="w-full py-3.5 px-4 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 active:scale-[0.99] text-white font-semibold text-sm rounded-xl shadow-lg shadow-indigo-500/25 transition cursor-pointer flex items-center justify-center gap-2"
+        >
+          <span>Request Access</span>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+        </button>
+      </form>
+
+      <div class="mt-6 pt-5 border-t border-slate-800/80 flex items-center justify-center gap-2 text-[11px] text-slate-400">
+        <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+        <span>Host Authorization Required • View Only</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIEW 2: WAITING FOR APPROVAL -->
+  <div id="view-waiting" class="hidden flex-1 flex flex-col items-center justify-center p-4">
+    <div class="w-full max-w-sm glass-card rounded-3xl p-8 shadow-2xl text-center">
+      <div class="relative w-20 h-20 mx-auto mb-6 flex items-center justify-center">
+        <div class="absolute inset-0 rounded-full bg-amber-500/20 pulse-radar"></div>
+        <div class="p-4 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-2xl relative z-10">
+          <svg class="w-8 h-8 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        </div>
+      </div>
+
+      <h2 class="text-xl font-bold text-white mb-2">Waiting for Approval</h2>
+      <p class="text-xs text-slate-300 leading-relaxed mb-6">
+        Your access request was sent to the host computer. Please wait for the host to click <strong class="text-amber-400">Approve</strong>.
+      </p>
+
+      <div class="p-3 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-400 font-mono mb-6">
+        Device: <span id="waiting-device-name" class="text-slate-200 font-sans font-semibold"></span>
+      </div>
+
+      <button
+        onclick="handleCancelRequest()"
+        class="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 active:bg-slate-800 text-slate-300 font-medium text-xs rounded-xl border border-slate-700/80 transition cursor-pointer"
+      >
+        Cancel Request
+      </button>
+    </div>
+  </div>
+
+  <!-- VIEW 3: APPROVED & CONNECTED SCREEN VIEWER -->
+  <div id="view-connected" class="hidden flex-1 flex flex-col h-screen overflow-hidden">
+    <!-- Viewer Top Bar -->
+    <header class="flex items-center justify-between px-4 py-2.5 bg-slate-900/95 border-b border-slate-800 backdrop-blur z-20 shrink-0">
+      <div class="flex items-center gap-2.5">
+        <div class="p-1.5 bg-indigo-600 rounded-lg text-white">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+        </div>
+        <div>
+          <span class="text-sm font-bold text-white tracking-tight">LANMirror</span>
+          <div class="flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span id="stream-status" class="text-[10px] text-emerald-400 font-medium">Live Stream</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button
+          onclick="toggleFullscreen()"
+          class="flex items-center gap-1 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 transition"
+          title="Toggle Fullscreen"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+          <span class="hidden sm:inline">Fullscreen</span>
+        </button>
+
+        <button
+          onclick="handleDisconnect()"
+          class="flex items-center gap-1 px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-xs font-medium rounded-lg border border-rose-500/30 transition"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+          <span>Exit</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Screen Canvas Container -->
+    <main class="flex-1 relative flex items-center justify-center bg-black overflow-hidden p-1 sm:p-3">
+      <!-- Waiting Frame Placeholder -->
+      <div id="screen-placeholder" class="text-center p-6 glass-card rounded-2xl max-w-sm mx-auto">
+        <div class="inline-flex p-3 bg-emerald-500/10 text-emerald-400 rounded-xl mb-3">
+          <svg class="w-6 h-6 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+        </div>
+        <h3 class="text-sm font-semibold text-white">Approved by Host</h3>
+        <p class="text-xs text-slate-400 mt-1">Starting live screen mirror...</p>
+      </div>
+
+      <div id="canvas-wrapper" class="w-full h-full flex items-center justify-center">
+        <canvas id="screen-canvas" class="hidden"></canvas>
+      </div>
+    </main>
+  </div>
+
+  <!-- VIEW 4: REJECTED -->
+  <div id="view-rejected" class="hidden flex-1 flex flex-col items-center justify-center p-4">
+    <div class="w-full max-w-sm glass-card rounded-3xl p-8 shadow-2xl text-center">
+      <div class="w-16 h-16 mx-auto mb-4 p-3.5 bg-rose-500/10 border border-rose-500/30 text-rose-400 rounded-2xl flex items-center justify-center">
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+      </div>
+      <h2 class="text-xl font-bold text-white mb-2">Access Rejected</h2>
+      <p class="text-xs text-slate-300 leading-relaxed mb-6">
+        The host rejected your connection request. You may try again or request from another device.
+      </p>
+      <button
+        onclick="showView('view-request')"
+        class="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs rounded-xl shadow-lg transition"
+      >
+        Try Again
+      </button>
+    </div>
+  </div>
+
+  <!-- VIEW 5: DISCONNECTED / STOPPED -->
+  <div id="view-ended" class="hidden flex-1 flex flex-col items-center justify-center p-4">
+    <div class="w-full max-w-sm glass-card rounded-3xl p-8 shadow-2xl text-center">
+      <div class="w-16 h-16 mx-auto mb-4 p-3.5 bg-slate-800 text-slate-400 rounded-2xl flex items-center justify-center">
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+      </div>
+      <h2 class="text-xl font-bold text-white mb-2">Session Ended</h2>
+      <p class="text-xs text-slate-400 leading-relaxed mb-6">
+        The host stopped sharing or your session was disconnected.
+      </p>
+      <button
+        onclick="showView('view-request')"
+        class="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs rounded-xl shadow-lg transition"
+      >
+        Reconnect
+      </button>
+    </div>
+  </div>
+
+  <!-- VIEWER APPLICATION LOGIC -->
+  <script>
+    let socket = null;
+    let clientId = localStorage.getItem('lanmirror_client_id');
+    if (!clientId) {
+      clientId = (typeof crypto.randomUUID === 'function') ? crypto.randomUUID() : 'client-' + Math.random().toString(36).substring(2, 11);
+      localStorage.setItem('lanmirror_client_id', clientId);
+    }
+
+    const defaultInput = document.getElementById('input-name');
+    const savedName = localStorage.getItem('lanmirror_display_name');
+    if (savedName) {
+      defaultInput.value = savedName;
+    } else {
+      const ua = navigator.userAgent;
+      if (/iPhone/i.test(ua)) defaultInput.value = "My iPhone";
+      else if (/iPad/i.test(ua)) defaultInput.value = "My iPad";
+      else if (/Android/i.test(ua)) defaultInput.value = "Android Mobile";
+      else if (/Mac/i.test(ua)) defaultInput.value = "Mac Viewer";
+      else if (/Windows/i.test(ua)) defaultInput.value = "Windows Laptop";
+      else defaultInput.value = "Mobile Device";
+    }
+
+    const canvas = document.getElementById('screen-canvas');
+    const ctx = canvas.getContext('2d');
+    const placeholder = document.getElementById('screen-placeholder');
+
+    function showView(viewId) {
+      const views = ['view-request', 'view-waiting', 'view-connected', 'view-rejected', 'view-ended'];
+      views.forEach(v => {
+        const el = document.getElementById(v);
+        if (el) {
+          if (v === viewId) el.classList.remove('hidden');
+          else el.classList.add('hidden');
+        }
+      });
+    }
+
+    function connectWebSocket(displayName) {
+      if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+      socket = new WebSocket(wsUrl);
+      socket.binaryType = 'arraybuffer';
+
+      socket.onopen = () => {
+        socket.send(JSON.stringify({
+          type: 'connection_request',
+          client_id: clientId,
+          display_name: displayName
+        }));
+      };
+
+      socket.onmessage = (event) => {
+        // Check if binary frame message
+        if (event.data instanceof ArrayBuffer) {
+          handleBinaryFrame(event.data);
+          return;
+        }
+
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'status') {
+            handleStatusChange(data.state);
+          } else if (data.type === 'announcement') {
+            showAnnouncement(data.message, data.sent_at);
+          }
+        } catch (err) {
+          console.error("Invalid text message:", err);
+        }
+      };
+
+      socket.onclose = () => {
+        // Socket closed
+      };
+
+      socket.onerror = (err) => {
+        console.error("WebSocket error:", err);
+      };
+    }
+
+    function handleBinaryFrame(buffer) {
+      if (buffer.byteLength < 13) return;
+
+      const view = new DataView(buffer);
+      const msgType = view.getUint8(0);
+      if (msgType !== 0x11) return; // 0x11 FULL_FRAME
+
+      const width = view.getUint16(9);
+      const height = view.getUint16(11);
+      const jpegData = buffer.slice(13);
+
+      const blob = new Blob([jpegData], { type: 'image/jpeg' });
+
+      if (typeof createImageBitmap === 'function') {
+        createImageBitmap(blob).then(bitmap => {
+          if (canvas.width !== width || canvas.height !== height) {
+            canvas.width = width;
+            canvas.height = height;
+          }
+          ctx.drawImage(bitmap, 0, 0);
+          bitmap.close();
+
+          if (!placeholder.classList.contains('hidden')) {
+            placeholder.classList.add('hidden');
+            canvas.classList.remove('hidden');
+          }
+        }).catch(err => {
+          fallbackRenderBlob(blob, width, height);
+        });
+      } else {
+        fallbackRenderBlob(blob, width, height);
+      }
+    }
+
+    function fallbackRenderBlob(blob, width, height) {
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+        }
+        ctx.drawImage(img, 0, 0);
+        URL.revokeObjectURL(url);
+        if (!placeholder.classList.contains('hidden')) {
+          placeholder.classList.add('hidden');
+          canvas.classList.remove('hidden');
+        }
+      };
+      img.src = url;
+    }
+
+    function handleStatusChange(state) {
+      switch (state) {
+        case 'pending':
+          showView('view-waiting');
+          break;
+        case 'approved':
+          showView('view-connected');
+          break;
+        case 'rejected':
+          showView('view-rejected');
+          if (socket) socket.close();
+          break;
+        case 'disconnected':
+        case 'server_stopped':
+          showView('view-ended');
+          if (socket) socket.close();
+          break;
+      }
+    }
+
+    function handleRequestAccess(e) {
+      e.preventDefault();
+      const name = defaultInput.value.trim();
+      if (!name) return;
+
+      localStorage.setItem('lanmirror_display_name', name);
+      document.getElementById('waiting-device-name').textContent = name;
+      showView('view-waiting');
+      connectWebSocket(name);
+    }
+
+    function handleCancelRequest() {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'cancel_request', client_id: clientId }));
+        socket.close();
+      }
+      showView('view-request');
+    }
+
+    function handleDisconnect() {
+      if (socket) socket.close();
+      showView('view-ended');
+    }
+
+    function showAnnouncement(message, time) {
+      const banner = document.getElementById('announcement-banner');
+      document.getElementById('announcement-text').textContent = message;
+      document.getElementById('announcement-time').textContent = time || '';
+      banner.classList.remove('hidden');
+
+      setTimeout(() => {
+        banner.classList.add('hidden');
+      }, 15000);
+    }
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+          console.log("Fullscreen request error:", err);
+        });
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+      }
+    }
+  </script>
+</body>
+</html>
