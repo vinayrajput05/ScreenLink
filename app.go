@@ -40,14 +40,15 @@ type ClientsPayload struct {
 
 // App struct
 type App struct {
-	ctx           context.Context
-	server        *server.Server
-	streamer      *capture.Streamer
-	serverMu      sync.Mutex
-	isSharing     bool
-	currentPort   int
-	announcements []AnnouncementRecord
-	annMu         sync.Mutex
+	ctx            context.Context
+	server         *server.Server
+	streamer       *capture.Streamer
+	serverMu       sync.Mutex
+	isSharing      bool
+	currentPort    int
+	currentQuality string
+	announcements  []AnnouncementRecord
+	annMu          sync.Mutex
 }
 
 type AnnouncementRecord struct {
@@ -59,7 +60,8 @@ type AnnouncementRecord struct {
 // NewApp creates a new App application struct
 func NewApp() *App {
 	return &App{
-		currentPort: 8080,
+		currentPort:    8080,
+		currentQuality: "fhd",
 	}
 }
 
@@ -82,6 +84,23 @@ func (a *App) GetSharingStatus() bool {
 	a.serverMu.Lock()
 	defer a.serverMu.Unlock()
 	return a.isSharing
+}
+
+// GetQualityPresets returns stream resolution presets
+func (a *App) GetQualityPresets() []capture.QualityPreset {
+	return capture.GetAvailableQualityPresets()
+}
+
+// SetQualityPreset updates stream quality and resolution dynamically
+func (a *App) SetQualityPreset(presetID string) {
+	a.serverMu.Lock()
+	a.currentQuality = presetID
+	streamer := a.streamer
+	a.serverMu.Unlock()
+
+	if streamer != nil {
+		streamer.SetQualityPreset(presetID)
+	}
 }
 
 // GetDisplays returns the list of detected displays on host machine
@@ -142,6 +161,7 @@ func (a *App) StartSharing(port int) (bool, error) {
 	oldStreamer := a.streamer
 	a.server = nil
 	a.streamer = nil
+	quality := a.currentQuality
 	a.serverMu.Unlock()
 
 	if oldStreamer != nil {
@@ -162,6 +182,7 @@ func (a *App) StartSharing(port int) (bool, error) {
 	}
 
 	streamer := capture.NewStreamer(srv)
+	streamer.SetQualityPreset(quality)
 	if err := streamer.Start(); err != nil {
 		_ = srv.Stop()
 		return false, fmt.Errorf("failed to start screen capture streamer: %w", err)

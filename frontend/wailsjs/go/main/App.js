@@ -26,6 +26,10 @@ export function GetDisplays() {
   return window['go']['main']['App']['GetDisplays']();
 }
 
+export function GetQualityPresets() {
+  return window['go']['main']['App']['GetQualityPresets']();
+}
+
 export function GetSharingStatus() {
   return window['go']['main']['App']['GetSharingStatus']();
 }
@@ -48,6 +52,10 @@ export function SelectDisplay(arg1) {
 
 export function SendAnnouncement(arg1) {
   return window['go']['main']['App']['SendAnnouncement'](arg1);
+}
+
+export function SetQualityPreset(arg1) {
+  return window['go']['main']['App']['SetQualityPreset'](arg1);
 }
 
 export function StartSharing(arg1) {

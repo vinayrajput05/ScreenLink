@@ -1,3 +1,30 @@
+export namespace capture {
+	
+	export class QualityPreset {
+	    id: string;
+	    name: string;
+	    description: string;
+	    maxHeight: number;
+	    quality: number;
+	    targetFps: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new QualityPreset(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.description = source["description"];
+	        this.maxHeight = source["maxHeight"];
+	        this.quality = source["quality"];
+	        this.targetFps = source["targetFps"];
+	    }
+	}
+
+}
+
 export namespace clients {
 	
 	export class ClientDTO {
