@@ -17,11 +17,11 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:             "LANMirror — Host Dashboard",
-		Width:             1120,
-		Height:            820,
-		MinWidth:          900,
-		MinHeight:         680,
+		Title:             "ScreenLink — Host Dashboard",
+		Width:             1140,
+		Height:            840,
+		MinWidth:          920,
+		MinHeight:         700,
 		DisableResize:     false,
 		Fullscreen:        false,
 		Frameless:         false,
@@ -30,7 +30,7 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		BackgroundColour: &options.RGBA{R: 10, G: 13, B: 20, A: 255},
+		BackgroundColour: &options.RGBA{R: 9, G: 11, B: 17, A: 255},
 		OnStartup:        app.startup,
 		Bind: []interface{}{
 			app,

@@ -13,7 +13,7 @@ import {
   Announcement,
   ServerStatus,
 } from './types';
-import { Info } from 'lucide-react';
+import { Sparkles, Cast, CheckCircle2, AlertCircle } from 'lucide-react';
 
 // Import Wails runtime and bindings
 import {
@@ -41,19 +41,18 @@ export default function App() {
   const [selectedIp, setSelectedIp] = useState<string>('127.0.0.1');
   const [port, setPort] = useState<number>(8080);
   
-  // Real dynamic client queues (NO DUMMY DATA)
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
   const [connectedViewers, setConnectedViewers] = useState<ConnectedViewer[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   
   const [isQrModalOpen, setIsQrModalOpen] = useState<boolean>(false);
-  const [notification, setNotification] = useState<string | null>(null);
+  const [notification, setNotification] = useState<{ msg: string; type: 'success' | 'info' | 'error' } | null>(null);
 
-  const showNotification = (msg: string) => {
-    setNotification(msg);
+  const showNotification = (msg: string, type: 'success' | 'info' | 'error' = 'info') => {
+    setNotification({ msg, type });
     setTimeout(() => {
-      setNotification((curr) => (curr === msg ? null : curr));
-    }, 3000);
+      setNotification((curr) => (curr?.msg === msg ? null : curr));
+    }, 3500);
   };
 
   const updateClientStateFromData = useCallback((data: any) => {
@@ -98,7 +97,6 @@ export default function App() {
     }
   }, [updateClientStateFromData]);
 
-  // Initialize system info, displays, and server state on mount
   useEffect(() => {
     async function init() {
       try {
@@ -132,7 +130,6 @@ export default function App() {
 
     init();
 
-    // Listen for live events from Go backend
     try {
       if (typeof EventsOn === 'function') {
         EventsOn('clients_updated', (data: any) => {
@@ -146,10 +143,9 @@ export default function App() {
         });
       }
     } catch (err) {
-      console.log('EventsOn not available in browser standalone mode');
+      console.log('EventsOn not available in standalone web mode');
     }
 
-    // Polling fallback every 1 second for instant sync
     const interval = setInterval(syncClients, 1000);
     return () => clearInterval(interval);
   }, [syncClients, updateClientStateFromData]);
@@ -164,10 +160,10 @@ export default function App() {
       }
       setStatus('running');
       await syncClients();
-      showNotification(`Server live on ${shareUrl} — ready for connections!`);
+      showNotification(`Live share active on ${shareUrl}`, 'success');
     } catch (err: any) {
       setStatus('error');
-      showNotification(`Failed to start server: ${err?.message || err}`);
+      showNotification(`Failed to start sharing: ${err?.message || err}`, 'error');
     }
   };
 
@@ -179,9 +175,9 @@ export default function App() {
       setStatus('stopped');
       setPendingRequests([]);
       setConnectedViewers([]);
-      showNotification('Screen sharing server stopped');
+      showNotification('Screen sharing stopped', 'info');
     } catch (err: any) {
-      showNotification(`Error stopping server: ${err?.message || err}`);
+      showNotification(`Error stopping sharing: ${err?.message || err}`, 'error');
     }
   };
 
@@ -191,7 +187,7 @@ export default function App() {
         await ApproveClient(id);
       }
       await syncClients();
-      showNotification('Viewer approved');
+      showNotification('Viewer approved and connected', 'success');
     } catch (err) {
       console.error('Approve error:', err);
     }
@@ -203,7 +199,7 @@ export default function App() {
         await RejectClient(id);
       }
       await syncClients();
-      showNotification('Viewer request rejected');
+      showNotification('Viewer access rejected', 'info');
     } catch (err) {
       console.error('Reject error:', err);
     }
@@ -215,7 +211,7 @@ export default function App() {
         await ApproveAll();
       }
       await syncClients();
-      showNotification('Approved all pending viewers');
+      showNotification('Approved all pending viewers', 'success');
     } catch (err) {
       console.error('Approve all error:', err);
     }
@@ -227,7 +223,7 @@ export default function App() {
         await DisconnectClient(id);
       }
       await syncClients();
-      showNotification('Viewer disconnected');
+      showNotification('Viewer disconnected', 'info');
     } catch (err) {
       console.error('Disconnect error:', err);
     }
@@ -239,7 +235,7 @@ export default function App() {
         await DisconnectAll();
       }
       await syncClients();
-      showNotification('Disconnected all viewers');
+      showNotification('Disconnected all viewers', 'info');
     } catch (err) {
       console.error('Disconnect all error:', err);
     }
@@ -256,7 +252,7 @@ export default function App() {
         sentAt: 'Just now',
       };
       setAnnouncements((prev) => [newAnn, ...prev]);
-      showNotification('Announcement broadcasted to viewers');
+      showNotification('Announcement broadcasted to viewers', 'success');
     } catch (err) {
       console.error('Announcement error:', err);
     }
@@ -270,13 +266,13 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0d14] text-slate-100 flex flex-col selection:bg-indigo-500/30 selection:text-indigo-200">
+    <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col selection:bg-indigo-500/30 selection:text-indigo-200">
       {/* Top Navbar */}
       <Header status={status} viewerCount={connectedViewers.length} />
 
-      {/* Main Content Area */}
+      {/* Main Dashboard Layout */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
-        {/* Top Control Grid: Screen Control + Share URL */}
+        {/* Top Control Grid: Display & Share URL */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <ScreenControlCard
             status={status}
@@ -297,7 +293,7 @@ export default function App() {
           />
         </div>
 
-        {/* Middle Section: Pending Requests + Connected Viewers */}
+        {/* Middle Section: Pending Requests + Active Viewers */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
           <PendingRequestsCard
             requests={pendingRequests}
@@ -324,19 +320,23 @@ export default function App() {
       </main>
 
       {/* Footer Info */}
-      <footer className="py-4 border-t border-slate-800/60 text-center text-xs text-slate-500 flex items-center justify-center gap-4">
-        <span>LANMirror v1.0</span>
+      <footer className="py-4 border-t border-slate-800/80 text-center text-xs text-slate-400 flex items-center justify-center gap-3">
+        <span className="font-semibold text-slate-300">ScreenLink v1.0</span>
         <span>•</span>
-        <span>Local IP: <span className="font-mono text-slate-400">{selectedIp}</span></span>
+        <span>LAN IP: <strong className="font-mono text-cyan-400">{selectedIp}</strong></span>
         <span>•</span>
-        <span className="text-slate-400">View-Only LAN Mirroring</span>
+        <span>Host Authorization Protected</span>
       </footer>
 
-      {/* Notification Toast */}
+      {/* Toast Notification */}
       {notification && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 bg-[#111726] border border-indigo-500/40 text-indigo-200 text-xs font-medium rounded-xl shadow-2xl animate-bounce">
-          <Info className="w-4 h-4 text-indigo-400 shrink-0" />
-          <span>{notification}</span>
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 bg-[#0e1424] border border-indigo-500/40 text-slate-100 text-xs font-semibold rounded-2xl shadow-2xl animate-bounce">
+          {notification.type === 'success' ? (
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          ) : (
+            <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
+          )}
+          <span>{notification.msg}</span>
         </div>
       )}
 
