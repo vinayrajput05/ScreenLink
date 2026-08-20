@@ -1,11 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Header } from './components/Header';
-import { ScreenControlCard } from './components/ScreenControlCard';
-import { ShareUrlCard } from './components/ShareUrlCard';
-import { PendingRequestsCard } from './components/PendingRequestsCard';
-import { ConnectedViewersCard } from './components/ConnectedViewersCard';
-import { AnnouncementCard } from './components/AnnouncementCard';
-import { QrCodeModal } from './components/QrCodeModal';
 import {
   DisplayInfo,
   QualityPreset,
@@ -14,28 +7,35 @@ import {
   ChatMessage,
   ServerStatus,
 } from './types';
-import { Sparkles, CheckCircle2 } from 'lucide-react';
-
-// Import Wails runtime and bindings
+import { ScreenControlCard } from './components/ScreenControlCard';
+import { ShareUrlCard } from './components/ShareUrlCard';
+import { PendingRequestsCard } from './components/PendingRequestsCard';
+import { ConnectedViewersCard } from './components/ConnectedViewersCard';
+import { AnnouncementCard } from './components/AnnouncementCard';
+import { QrCodeModal } from './components/QrCodeModal';
 import {
+  GetSystemInfo,
   GetDisplays,
+  SelectDisplay,
   GetQualityPresets,
   SetQualityPreset,
-  GetSystemInfo,
-  GetSharingStatus,
   StartSharing,
   StopSharing,
+  PauseScreenShare,
+  ResumeScreenShare,
+  IsScreenPaused,
+  IsScreenStreaming,
+  GetSharingStatus,
+  GetClients,
   ApproveClient,
   RejectClient,
   ApproveAll,
   DisconnectClient,
   DisconnectAll,
-  SendChatMessage,
   SendCodeSnippet,
+  SendChatMessage,
   GetChatMessages,
   ClearChatHistory,
-  GetClients,
-  SelectDisplay,
 } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 
@@ -48,6 +48,9 @@ const DEFAULT_PRESETS: QualityPreset[] = [
 
 export default function App() {
   const [status, setStatus] = useState<ServerStatus>('stopped');
+  const [isScreenActive, setIsScreenActive] = useState<boolean>(false);
+  const [isPaused, setIsPaused] = useState<boolean>(false);
+
   const [displays, setDisplays] = useState<DisplayInfo[]>([]);
   const [selectedDisplay, setSelectedDisplay] = useState<string>('display-0');
   const [qualityPresets, setQualityPresets] = useState<QualityPreset[]>(DEFAULT_PRESETS);
@@ -107,6 +110,14 @@ export default function App() {
         const running = await GetSharingStatus();
         setStatus(running ? 'running' : 'stopped');
       }
+      if (typeof IsScreenStreaming === 'function') {
+        const screenRunning = await IsScreenStreaming();
+        setIsScreenActive(screenRunning);
+      }
+      if (typeof IsScreenPaused === 'function') {
+        const paused = await IsScreenPaused();
+        setIsPaused(paused);
+      }
       if (typeof GetChatMessages === 'function') {
         const msgs = await GetChatMessages();
         if (Array.isArray(msgs)) setMessages(msgs);
@@ -119,11 +130,23 @@ export default function App() {
   useEffect(() => {
     async function init() {
       try {
+        if (typeof GetSystemInfo === 'function') {
+          const sysInfo = await GetSystemInfo();
+          if (sysInfo && sysInfo.ipAddresses && sysInfo.ipAddresses.length > 0) {
+            setIpAddresses(sysInfo.ipAddresses);
+            setSelectedIp(sysInfo.ipAddresses[0]);
+            if (sysInfo.defaultPort) {
+              setPort(sysInfo.defaultPort);
+            }
+          }
+        }
+
         if (typeof GetDisplays === 'function') {
           const dispList = await GetDisplays();
           if (dispList && dispList.length > 0) {
             setDisplays(dispList);
-            setSelectedDisplay(dispList[0].id);
+            const primary = dispList.find((d) => d.isPrimary) || dispList[0];
+            setSelectedDisplay(primary.id);
           }
         }
 
@@ -131,31 +154,13 @@ export default function App() {
           const presets = await GetQualityPresets();
           if (presets && presets.length > 0) {
             setQualityPresets(presets);
+            setSelectedQuality(presets[0].id);
           }
-        }
-
-        if (typeof GetSystemInfo === 'function') {
-          const sys = await GetSystemInfo();
-          if (sys && Array.isArray(sys.ipAddresses) && sys.ipAddresses.length > 0) {
-            setIpAddresses(sys.ipAddresses);
-            setSelectedIp(sys.ipAddresses[0]);
-            if (sys.defaultPort) setPort(sys.defaultPort);
-          }
-        }
-
-        if (typeof GetSharingStatus === 'function') {
-          const isRunning = await GetSharingStatus();
-          setStatus(isRunning ? 'running' : 'stopped');
-        }
-
-        if (typeof GetChatMessages === 'function') {
-          const msgs = await GetChatMessages();
-          if (Array.isArray(msgs)) setMessages(msgs);
         }
 
         await syncClients();
       } catch (err) {
-        console.error('Initialization error:', err);
+        console.error('Init error:', err);
       }
     }
 
@@ -167,15 +172,20 @@ export default function App() {
           updateClientStateFromData(data);
         });
 
-        EventsOn('server_state_changed', (payload: any) => {
-          if (payload?.status) {
-            setStatus(payload.status);
-          }
+        EventsOn('messages_updated', (newMessages: any) => {
+          if (Array.isArray(newMessages)) setMessages(newMessages);
         });
 
-        EventsOn('messages_updated', (msgs: any) => {
-          if (Array.isArray(msgs)) {
-            setMessages(msgs);
+        EventsOn('server_state_changed', (state: any) => {
+          if (state && state.status) {
+            setStatus(state.status === 'running' ? 'running' : 'stopped');
+            if (state.port) setPort(state.port);
+            if (typeof state.screenActive === 'boolean') {
+              setIsScreenActive(state.screenActive);
+            }
+            if (typeof state.isPaused === 'boolean') {
+              setIsPaused(state.isPaused);
+            }
           }
         });
       }
@@ -196,6 +206,8 @@ export default function App() {
         await StartSharing(port);
       }
       setStatus('running');
+      setIsScreenActive(true);
+      setIsPaused(false);
       await syncClients();
       showNotification(`Live screen share active on ${shareUrl}`, 'success');
     } catch (err: any) {
@@ -204,12 +216,39 @@ export default function App() {
     }
   };
 
+  const handlePauseSharing = async () => {
+    try {
+      if (typeof PauseScreenShare === 'function') {
+        await PauseScreenShare();
+      }
+      setIsPaused(true);
+      showNotification('Screen share paused — viewers now playing Memory Game!', 'info');
+    } catch (err: any) {
+      showNotification(`Error pausing sharing: ${err?.message || err}`, 'error');
+    }
+  };
+
+  const handleResumeSharing = async () => {
+    try {
+      if (typeof ResumeScreenShare === 'function') {
+        await ResumeScreenShare();
+      }
+      setIsPaused(false);
+      setIsScreenActive(true);
+      showNotification('Screen share resumed live for all viewers', 'success');
+    } catch (err: any) {
+      showNotification(`Error resuming sharing: ${err?.message || err}`, 'error');
+    }
+  };
+
   const handleStopSharing = async () => {
     try {
       if (typeof StopSharing === 'function') {
         await StopSharing();
       }
-      showNotification('Screen video stream paused (chat & code sharing remains active)', 'info');
+      setIsScreenActive(false);
+      setIsPaused(false);
+      showNotification('Screen video stream stopped (chat & code sharing remains active)', 'info');
     } catch (err: any) {
       showNotification(`Error stopping sharing: ${err?.message || err}`, 'error');
     }
@@ -273,7 +312,7 @@ export default function App() {
     }
   };
 
-  const handleDisconnectViewer = async (id: string) => {
+  const handleDisconnectClient = async (id: string) => {
     try {
       if (typeof DisconnectClient === 'function') {
         await DisconnectClient(id);
@@ -308,7 +347,7 @@ export default function App() {
     }
   };
 
-  const handleSendCode = async (title: string, code: string, language: string) => {
+  const handleSendCodeSnippet = async (title: string, code: string, language: string) => {
     try {
       if (typeof SendCodeSnippet === 'function') {
         await SendCodeSnippet(title, code, language);
@@ -319,7 +358,7 @@ export default function App() {
     }
   };
 
-  const handleClearMessages = async () => {
+  const handleClearHistory = async () => {
     try {
       if (typeof ClearChatHistory === 'function') {
         await ClearChatHistory();
@@ -332,84 +371,109 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col selection:bg-indigo-500/30 selection:text-indigo-200">
-      {/* Top Navbar */}
-      <Header status={status} viewerCount={connectedViewers.length} />
-
-      {/* Main Dashboard Layout */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
-        {/* Top Control Grid: Display & Share URL */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <ScreenControlCard
-            status={status}
-            displays={displays}
-            selectedDisplay={selectedDisplay}
-            onSelectDisplay={handleSelectDisplay}
-            qualityPresets={qualityPresets}
-            selectedQuality={selectedQuality}
-            onSelectQuality={handleSelectQuality}
-            onStartSharing={handleStartSharing}
-            onStopSharing={handleStopSharing}
-          />
-
-          <ShareUrlCard
-            status={status}
-            url={shareUrl}
-            ipAddresses={ipAddresses}
-            selectedIp={selectedIp}
-            onSelectIp={setSelectedIp}
-            onShowQr={() => setIsQrModalOpen(true)}
-          />
+    <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col justify-between selection:bg-indigo-500/30">
+      {/* Header */}
+      <header className="px-6 py-4 border-b border-slate-800/80 bg-[#090d17]/80 backdrop-blur-xl sticky top-0 z-40 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-500 rounded-2xl shadow-glow-brand text-white">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-black tracking-tight text-white">ScreenLink</h1>
+              <span className="px-2 py-0.5 text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-full">
+                30–60 FPS HD
+              </span>
+            </div>
+            <p className="text-xs text-slate-400">Ultra-Fast Local Screen Mirroring & Code Broadcast</p>
+          </div>
         </div>
 
-        {/* Middle Section: Pending Requests + Active Viewers */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-xl text-xs">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                status === 'running'
+                  ? isPaused
+                    ? 'bg-amber-400'
+                    : 'bg-emerald-500 animate-pulse'
+                  : 'bg-slate-500'
+              }`}
+            />
+            <span className="font-semibold text-slate-300 capitalize">
+              {status === 'running' ? (isPaused ? 'Screen Paused' : 'Server Online') : 'Offline'}
+            </span>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Host Dashboard Grid */}
+      <main className="flex-1 p-6 max-w-7xl mx-auto w-full space-y-6">
+        {/* Row 1: Screen Controls & Share URL */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-7">
+            <ScreenControlCard
+              status={status}
+              isScreenActive={isScreenActive}
+              isPaused={isPaused}
+              displays={displays}
+              selectedDisplay={selectedDisplay}
+              onSelectDisplay={handleSelectDisplay}
+              qualityPresets={qualityPresets}
+              selectedQuality={selectedQuality}
+              onSelectQuality={handleSelectQuality}
+              onStartSharing={handleStartSharing}
+              onPauseSharing={handlePauseSharing}
+              onResumeSharing={handleResumeSharing}
+              onStopSharing={handleStopSharing}
+            />
+          </div>
+
+          <div className="lg:col-span-5">
+            <ShareUrlCard
+              status={status}
+              url={shareUrl}
+              ipAddresses={ipAddresses}
+              selectedIp={selectedIp}
+              onSelectIp={setSelectedIp}
+              onShowQr={() => setIsQrModalOpen(true)}
+            />
+          </div>
+        </div>
+
+        {/* Row 2: Live Viewers Management */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <PendingRequestsCard
             requests={pendingRequests}
             onApprove={handleApproveRequest}
             onReject={handleRejectRequest}
             onApproveAll={handleApproveAll}
           />
-
           <ConnectedViewersCard
             viewers={connectedViewers}
-            onDisconnect={handleDisconnectViewer}
+            onDisconnect={handleDisconnectClient}
             onDisconnectAll={handleDisconnectAll}
           />
         </div>
 
-        {/* Bottom Section: Host Chat & Code Broadcaster */}
+        {/* Row 3: Live Code & Text Broadcaster */}
         <div>
           <AnnouncementCard
             status={status}
             messages={messages}
             onSendMessage={handleSendMessage}
-            onSendCode={handleSendCode}
-            onClearMessages={handleClearMessages}
+            onSendCode={handleSendCodeSnippet}
+            onClearMessages={handleClearHistory}
           />
         </div>
       </main>
 
-      {/* Footer Info */}
-      <footer className="py-4 border-t border-slate-800/80 text-center text-xs text-slate-400 flex items-center justify-center gap-3">
-        <span className="font-semibold text-slate-300">ScreenLink v1.0</span>
-        <span>•</span>
-        <span>LAN IP: <strong className="font-mono text-cyan-400">{selectedIp}</strong></span>
-        <span>•</span>
-        <span>Screen Mirror & Live Code Sidebar Broadcaster</span>
+      {/* Footer */}
+      <footer className="px-6 py-4 border-t border-slate-900 bg-[#07090e] text-center text-xs text-slate-500">
+        ScreenLink • High-Framerate LAN Mirroring & Live Code Streaming
       </footer>
-
-      {/* Toast Notification */}
-      {notification && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 bg-[#0e1424] border border-indigo-500/40 text-slate-100 text-xs font-semibold rounded-2xl shadow-2xl animate-bounce">
-          {notification.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-          ) : (
-            <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
-          )}
-          <span>{notification.msg}</span>
-        </div>
-      )}
 
       {/* QR Code Modal */}
       <QrCodeModal

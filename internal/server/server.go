@@ -50,6 +50,8 @@ type Server struct {
 	stopChan    chan struct{}
 	chatHistory []ChatMessage
 	chatMu      sync.RWMutex
+	streamState string
+	stateMu     sync.RWMutex
 }
 
 type WsMessage struct {
@@ -74,6 +76,7 @@ func NewServer(port int, viewerHTML []byte, cb ServerCallback) *Server {
 		viewerHTML:  viewerHTML,
 		stopChan:    make(chan struct{}),
 		chatHistory: make([]ChatMessage, 0),
+		streamState: "stopped",
 	}
 }
 
@@ -291,9 +294,17 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			})
 			_ = conn.WriteMessage(websocket.TextMessage, resp)
 
-			// If approved, send chat history
+			// If approved, send chat history and current stream state
 			if currentState == clients.ClientApproved {
 				s.sendChatHistoryTo(client)
+				s.stateMu.RLock()
+				curStreamState := s.streamState
+				s.stateMu.RUnlock()
+				streamStateMsg, _ := json.Marshal(WsMessage{
+					Type:  "stream_state",
+					State: curStreamState,
+				})
+				_ = client.SafeSend(websocket.TextMessage, streamStateMsg)
 			}
 
 			if s.callback != nil {
@@ -326,6 +337,31 @@ func (s *Server) sendChatHistoryTo(c *clients.Client) {
 			History: history,
 		})
 		_ = c.SafeSend(websocket.TextMessage, payload)
+	}
+}
+
+// BroadcastStreamState notifies all viewers about pause / resume / stop
+func (s *Server) BroadcastStreamState(state string) {
+	if s == nil {
+		return
+	}
+
+	s.stateMu.Lock()
+	s.streamState = state
+	s.stateMu.Unlock()
+
+	payload, _ := json.Marshal(WsMessage{
+		Type:  "stream_state",
+		State: state,
+	})
+
+	s.clientsMu.RLock()
+	defer s.clientsMu.RUnlock()
+
+	for _, client := range s.clients {
+		if client.State == clients.ClientApproved {
+			_ = client.SafeSend(websocket.TextMessage, payload)
+		}
 	}
 }
 
@@ -375,6 +411,15 @@ func (s *Server) ApproveClient(clientID string) {
 		})
 		_ = client.SafeSend(websocket.TextMessage, resp)
 		go s.sendChatHistoryTo(client)
+
+		s.stateMu.RLock()
+		curStreamState := s.streamState
+		s.stateMu.RUnlock()
+		streamStateMsg, _ := json.Marshal(WsMessage{
+			Type:  "stream_state",
+			State: curStreamState,
+		})
+		_ = client.SafeSend(websocket.TextMessage, streamStateMsg)
 	}
 	s.clientsMu.Unlock()
 

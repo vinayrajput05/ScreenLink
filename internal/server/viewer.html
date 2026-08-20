@@ -290,6 +290,77 @@
       background: #334155;
     }
 
+    /* Interactive Memory Card Game Styles */
+    .memory-game-wrap {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      background: radial-gradient(circle at center, #0f172a 0%, #030712 100%);
+      overflow-y: auto;
+    }
+
+    .game-board {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.6rem;
+      max-width: 360px;
+      width: 100%;
+      perspective: 1000px;
+    }
+
+    .card-item {
+      aspect-ratio: 1;
+      position: relative;
+      transform-style: preserve-3d;
+      transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .card-item.flipped, .card-item.matched {
+      transform: rotateY(180deg);
+    }
+
+    .card-face {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+      border-radius: 0.85rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.6rem;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+    }
+
+    .card-back {
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border: 1.5px solid #334155;
+      color: #6366f1;
+    }
+    .card-back:hover {
+      border-color: #6366f1;
+      transform: scale(1.02);
+    }
+
+    .card-front {
+      background: linear-gradient(135deg, #312e81, #1e1b4b);
+      border: 1.5px solid #818cf8;
+      transform: rotateY(180deg);
+    }
+
+    .card-item.matched .card-front {
+      background: linear-gradient(135deg, #065f46, #064e3b);
+      border: 1.5px solid #34d399;
+      box-shadow: 0 0 15px rgba(52, 211, 153, 0.4);
+    }
+
     ::-webkit-scrollbar {
       width: 5px;
       height: 5px;
@@ -381,7 +452,7 @@
         <div>
           <span style="font-size:0.875rem; font-weight:800; color:#ffffff;">ScreenLink</span>
           <div style="display:flex; align-items:center; gap:0.3rem;">
-            <span style="width:0.4rem; height:0.4rem; border-radius:9999px; background:#10b981;"></span>
+            <span id="stream-dot" style="width:0.4rem; height:0.4rem; border-radius:9999px; background:#10b981;"></span>
             <span id="stream-status" style="font-size:0.65rem; color:#34d399; font-weight:700; text-transform:uppercase;">Connected Live</span>
           </div>
         </div>
@@ -406,18 +477,39 @@
     <div class="viewer-content">
       <!-- Screen Canvas Area -->
       <main class="screen-area">
-        <div id="screen-placeholder" style="text-align:center; padding:2rem; background:rgba(13,18,31,0.85); border:1px solid #334155; border-radius:1.25rem; max-width:320px;">
-          <div style="display:inline-flex; padding:0.75rem; background:rgba(99,102,241,0.15); color:#a5b4fc; border-radius:1rem; margin-bottom:0.75rem;">
-            <svg style="width:1.75rem; height:1.75rem;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/></svg>
-          </div>
-          <h3 style="font-size:0.875rem; font-weight:700; color:#fff;">Live Session Connected</h3>
-          <p style="font-size:0.75rem; color:#94a3b8; margin-top:0.4rem;">
-            Source code and notes appear in the sidebar on the right.
-          </p>
-        </div>
+        <!-- Video Canvas -->
+        <canvas id="screen-canvas" class="hidden"></canvas>
 
-        <div id="canvas-wrapper">
-          <canvas id="screen-canvas" class="hidden"></canvas>
+        <!-- Interactive Memory Card Game (Visible when idle, paused, or stopped) -->
+        <div id="memory-game-wrap" class="memory-game-wrap">
+          <div style="max-width:380px; width:100%; text-align:center; margin-bottom:0.75rem;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5rem;">
+              <div style="display:flex; align-items:center; gap:0.4rem;">
+                <span id="game-status-badge" style="padding:0.2rem 0.5rem; background:rgba(245,158,11,0.2); color:#fbbf24; border:1px solid rgba(245,158,11,0.4); border-radius:0.5rem; font-size:0.65rem; font-weight:800;">
+                  🎮 SCREEN SHARING IDLE
+                </span>
+                <span style="font-size:0.75rem; font-weight:800; color:#fff;">Memory Game</span>
+              </div>
+              <button onclick="initMemoryGame()" style="padding:0.2rem 0.5rem; background:#1e293b; color:#cbd5e1; border:1px solid #334155; border-radius:0.5rem; font-size:0.65rem; font-weight:700; cursor:pointer;">
+                🔄 Restart
+              </button>
+            </div>
+
+            <!-- Stats Bar -->
+            <div style="display:flex; align-items:center; justify-content:space-around; padding:0.4rem 0.75rem; background:rgba(15,23,42,0.8); border:1px solid #334155; border-radius:0.75rem; font-size:0.7rem; font-family:monospace; color:#94a3b8;">
+              <div>Moves: <span id="game-moves" style="color:#60a5fa; font-weight:bold;">0</span></div>
+              <div>Matches: <span id="game-matches" style="color:#34d399; font-weight:bold;">0 / 8</span></div>
+              <div>Time: <span id="game-time" style="color:#f59e0b; font-weight:bold;">00:00</span></div>
+            </div>
+          </div>
+
+          <!-- 4x4 Card Grid -->
+          <div id="game-board" class="game-board"></div>
+
+          <!-- Victory Banner -->
+          <div id="game-victory" class="hidden" style="margin-top:0.75rem; padding:0.6rem 1rem; background:rgba(6,95,70,0.9); border:1px solid #34d399; border-radius:0.75rem; text-align:center; font-size:0.75rem; color:#fff; font-weight:bold;">
+            🎉 Awesome! All matched in <span id="victory-moves"></span> moves!
+          </div>
         </div>
       </main>
 
@@ -480,6 +572,7 @@
   <!-- LOGIC SCRIPT -->
   <script>
     let socket = null;
+    let isStreamPaused = false;
     let clientId = localStorage.getItem('screenlink_client_id');
     if (!clientId) {
       clientId = (typeof crypto.randomUUID === 'function') ? crypto.randomUUID() : 'client-' + Math.random().toString(36).substring(2, 11);
@@ -507,6 +600,7 @@
       ctx.imageSmoothingQuality = 'high';
     }
     const placeholder = document.getElementById('screen-placeholder');
+    const gameWrap = document.getElementById('memory-game-wrap');
 
     let unreadCount = 0;
 
@@ -553,6 +647,35 @@
       });
     }
 
+    function setStreamPauseState(showGame, mode) {
+      isStreamPaused = showGame;
+      const statusEl = document.getElementById('stream-status');
+      const dotEl = document.getElementById('stream-dot');
+      const gameContainer = document.getElementById('memory-game-wrap');
+      const screenCanvas = document.getElementById('screen-canvas');
+      const screenHold = document.getElementById('screen-placeholder');
+      const badgeEl = document.getElementById('game-status-badge');
+
+      if (showGame) {
+        if (gameContainer) gameContainer.classList.remove('hidden');
+        if (screenCanvas) screenCanvas.classList.add('hidden');
+        if (screenHold) screenHold.classList.add('hidden');
+        if (badgeEl) {
+          badgeEl.textContent = (mode === 'paused') ? '⏸ SCREEN PAUSED' : '🎮 SCREEN SHARING IDLE';
+        }
+        if (statusEl) {
+          statusEl.textContent = (mode === 'paused') ? 'Paused • Memory Game' : 'Connected • Memory Game';
+        }
+        if (dotEl) dotEl.style.background = '#f59e0b';
+        initMemoryGame();
+      } else {
+        if (gameContainer) gameContainer.classList.add('hidden');
+        if (screenHold) screenHold.classList.add('hidden');
+        if (statusEl) statusEl.textContent = 'Connected Live';
+        if (dotEl) dotEl.style.background = '#10b981';
+      }
+    }
+
     function connectWebSocket(displayName) {
       if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
         return;
@@ -574,6 +697,10 @@
 
       socket.onmessage = (event) => {
         if (event.data instanceof ArrayBuffer) {
+          if (isStreamPaused) {
+            // Drop frames when stream is paused or stopped by host
+            return;
+          }
           handleBinaryFrame(event.data);
           return;
         }
@@ -582,6 +709,14 @@
           const data = JSON.parse(event.data);
           if (data.type === 'status') {
             handleStatusChange(data.state);
+          } else if (data.type === 'stream_state') {
+            if (data.state === 'paused') {
+              setStreamPauseState(true, 'paused');
+            } else if (data.state === 'stopped') {
+              setStreamPauseState(true, 'stopped');
+            } else if (data.state === 'active') {
+              setStreamPauseState(false);
+            }
           } else if (data.type === 'chat_message' && data.chatPayload) {
             appendMessageToSidebar(data.chatPayload);
           } else if (data.type === 'chat_history' && Array.isArray(data.history)) {
@@ -679,7 +814,7 @@
     }
 
     function handleBinaryFrame(buffer) {
-      if (buffer.byteLength < 13) return;
+      if (isStreamPaused || buffer.byteLength < 13) return;
 
       const view = new DataView(buffer);
       const msgType = view.getUint8(0);
@@ -697,15 +832,18 @@
             canvas.width = width;
             canvas.height = height;
             const statusEl = document.getElementById('stream-status');
-            if (statusEl) statusEl.textContent = `${width}×${height} • HD Live`;
+            if (statusEl && !isStreamPaused) statusEl.textContent = `${width}×${height} • HD Live`;
           }
           ctx.drawImage(bitmap, 0, 0);
           bitmap.close();
 
           if (placeholder && !placeholder.classList.contains('hidden')) {
             placeholder.classList.add('hidden');
-            canvas.classList.remove('hidden');
           }
+          if (gameWrap && !gameWrap.classList.contains('hidden')) {
+            gameWrap.classList.add('hidden');
+          }
+          canvas.classList.remove('hidden');
         }).catch(err => {
           fallbackRenderBlob(blob, width, height);
         });
@@ -722,14 +860,17 @@
           canvas.width = width;
           canvas.height = height;
           const statusEl = document.getElementById('stream-status');
-          if (statusEl) statusEl.textContent = `${width}×${height} • HD Live`;
+          if (statusEl && !isStreamPaused) statusEl.textContent = `${width}×${height} • HD Live`;
         }
         ctx.drawImage(img, 0, 0);
         URL.revokeObjectURL(url);
         if (placeholder && !placeholder.classList.contains('hidden')) {
           placeholder.classList.add('hidden');
-          canvas.classList.remove('hidden');
         }
+        if (gameWrap && !gameWrap.classList.contains('hidden')) {
+          gameWrap.classList.add('hidden');
+        }
+        canvas.classList.remove('hidden');
       };
       img.src = url;
     }
@@ -741,6 +882,7 @@
           break;
         case 'approved':
           showView('view-connected');
+          setStreamPauseState(true, 'stopped');
           break;
         case 'rejected':
           showView('view-rejected');
@@ -790,6 +932,129 @@
         }
       }
     }
+
+    /* -------------------------------------------------------------
+       Interactive Memory Card Game Implementation
+       ------------------------------------------------------------- */
+    const GAME_SYMBOLS = ['🚀', '💻', '⚡', '🎮', '🧠', '🎨', '🔥', '💎'];
+    let gameCards = [];
+    let flippedCards = [];
+    let matchedPairs = 0;
+    let gameMoves = 0;
+    let gameTimer = null;
+    let gameSeconds = 0;
+    let isGameLocked = false;
+
+    function initMemoryGame() {
+      clearInterval(gameTimer);
+      gameSeconds = 0;
+      gameMoves = 0;
+      matchedPairs = 0;
+      flippedCards = [];
+      isGameLocked = false;
+
+      const movesEl = document.getElementById('game-moves');
+      const matchesEl = document.getElementById('game-matches');
+      const timeEl = document.getElementById('game-time');
+      const victoryEl = document.getElementById('game-victory');
+      const boardEl = document.getElementById('game-board');
+
+      if (movesEl) movesEl.textContent = '0';
+      if (matchesEl) matchesEl.textContent = '0 / 8';
+      if (timeEl) timeEl.textContent = '00:00';
+      if (victoryEl) victoryEl.classList.add('hidden');
+      if (!boardEl) return;
+
+      boardEl.innerHTML = '';
+
+      // Create shuffled deck of 16 cards (8 pairs)
+      const deck = [...GAME_SYMBOLS, ...GAME_SYMBOLS].sort(() => Math.random() - 0.5);
+      gameCards = deck.map((symbol, index) => ({
+        id: index,
+        symbol: symbol,
+        matched: false,
+        flipped: false
+      }));
+
+      // Render cards
+      gameCards.forEach(card => {
+        const cardEl = document.createElement('div');
+        cardEl.className = 'card-item';
+        cardEl.dataset.id = card.id;
+
+        cardEl.innerHTML = `
+          <div class="card-face card-back">
+            <svg style="width:1.25rem; height:1.25rem; opacity:0.6;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          </div>
+          <div class="card-face card-front">${card.symbol}</div>
+        `;
+
+        cardEl.onclick = () => onCardClick(card.id, cardEl);
+        boardEl.appendChild(cardEl);
+      });
+
+      // Start timer
+      gameTimer = setInterval(() => {
+        gameSeconds++;
+        const mins = String(Math.floor(gameSeconds / 60)).padStart(2, '0');
+        const secs = String(gameSeconds % 60).padStart(2, '0');
+        if (timeEl) timeEl.textContent = `${mins}:${secs}`;
+      }, 1000);
+    }
+
+    function onCardClick(cardId, cardEl) {
+      if (isGameLocked) return;
+      const card = gameCards.find(c => c.id === cardId);
+      if (!card || card.matched || card.flipped) return;
+
+      // Flip card
+      card.flipped = true;
+      cardEl.classList.add('flipped');
+      flippedCards.push({ card, el: cardEl });
+
+      if (flippedCards.length === 2) {
+        gameMoves++;
+        const movesEl = document.getElementById('game-moves');
+        if (movesEl) movesEl.textContent = gameMoves;
+
+        const [card1, card2] = flippedCards;
+        if (card1.card.symbol === card2.card.symbol) {
+          // Match found!
+          card1.card.matched = true;
+          card2.card.matched = true;
+          card1.el.classList.add('matched');
+          card2.el.classList.add('matched');
+          matchedPairs++;
+
+          const matchesEl = document.getElementById('game-matches');
+          if (matchesEl) matchesEl.textContent = `${matchedPairs} / 8`;
+
+          flippedCards = [];
+
+          if (matchedPairs === 8) {
+            clearInterval(gameTimer);
+            const victoryEl = document.getElementById('game-victory');
+            const victoryMovesEl = document.getElementById('victory-moves');
+            if (victoryMovesEl) victoryMovesEl.textContent = gameMoves;
+            if (victoryEl) victoryEl.classList.remove('hidden');
+          }
+        } else {
+          // No match, flip back after 700ms
+          isGameLocked = true;
+          setTimeout(() => {
+            card1.card.flipped = false;
+            card2.card.flipped = false;
+            card1.el.classList.remove('flipped');
+            card2.el.classList.remove('flipped');
+            flippedCards = [];
+            isGameLocked = false;
+          }, 700);
+        }
+      }
+    }
+
+    // Initialize Memory Game immediately so it's always ready
+    initMemoryGame();
   </script>
 </body>
 </html>

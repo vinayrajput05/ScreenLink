@@ -47,6 +47,7 @@ type App struct {
 	serverMu       sync.Mutex
 	isServerActive bool
 	isScreenActive bool
+	isPaused       bool
 	currentPort    int
 	currentQuality string
 	messages       []server.ChatMessage
@@ -100,6 +101,7 @@ func (a *App) ensureServerRunning(port int) (*server.Server, error) {
 			"status":       "running",
 			"port":         a.currentPort,
 			"screenActive": a.isScreenActive,
+			"isPaused":     a.isPaused,
 		})
 	}
 
@@ -127,6 +129,13 @@ func (a *App) IsScreenStreaming() bool {
 	a.serverMu.Lock()
 	defer a.serverMu.Unlock()
 	return a.isScreenActive
+}
+
+// IsScreenPaused returns true if screen capture is currently paused
+func (a *App) IsScreenPaused() bool {
+	a.serverMu.Lock()
+	defer a.serverMu.Unlock()
+	return a.isPaused
 }
 
 // GetQualityPresets returns stream resolution presets
@@ -209,31 +218,93 @@ func (a *App) StartSharing(port int) (bool, error) {
 			return false, fmt.Errorf("failed to start screen capture: %w", err)
 		}
 		a.streamer = streamer
+	} else {
+		a.streamer.Resume()
 	}
 	a.isScreenActive = true
+	a.isPaused = false
 	a.serverMu.Unlock()
+
+	srv.BroadcastStreamState("active")
 
 	if a.ctx != nil {
 		runtime.EventsEmit(a.ctx, "server_state_changed", map[string]interface{}{
 			"status":       "running",
 			"port":         a.currentPort,
 			"screenActive": true,
+			"isPaused":     false,
 		})
 	}
 
 	return true, nil
 }
 
+// PauseScreenShare pauses screen capture and broadcasts paused state to viewers
+func (a *App) PauseScreenShare() {
+	a.serverMu.Lock()
+	streamer := a.streamer
+	srv := a.server
+	a.isPaused = true
+	a.serverMu.Unlock()
+
+	if streamer != nil {
+		streamer.Pause()
+	}
+	if srv != nil {
+		srv.BroadcastStreamState("paused")
+	}
+
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "server_state_changed", map[string]interface{}{
+			"status":       "running",
+			"port":         a.currentPort,
+			"screenActive": true,
+			"isPaused":     true,
+		})
+	}
+}
+
+// ResumeScreenShare resumes screen capture and broadcasts active state to viewers
+func (a *App) ResumeScreenShare() {
+	a.serverMu.Lock()
+	streamer := a.streamer
+	srv := a.server
+	a.isPaused = false
+	a.isScreenActive = true
+	a.serverMu.Unlock()
+
+	if streamer != nil {
+		streamer.Resume()
+	}
+	if srv != nil {
+		srv.BroadcastStreamState("active")
+	}
+
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "server_state_changed", map[string]interface{}{
+			"status":       "running",
+			"port":         a.currentPort,
+			"screenActive": true,
+			"isPaused":     false,
+		})
+	}
+}
+
 // StopSharing stops screen capture streaming while keeping the chat/code server running
 func (a *App) StopSharing() error {
 	a.serverMu.Lock()
 	streamer := a.streamer
+	srv := a.server
 	a.streamer = nil
 	a.isScreenActive = false
+	a.isPaused = false
 	a.serverMu.Unlock()
 
 	if streamer != nil {
 		streamer.Stop()
+	}
+	if srv != nil {
+		srv.BroadcastStreamState("stopped")
 	}
 
 	if a.ctx != nil {
@@ -241,6 +312,7 @@ func (a *App) StopSharing() error {
 			"status":       "running",
 			"port":         a.currentPort,
 			"screenActive": false,
+			"isPaused":     false,
 		})
 	}
 

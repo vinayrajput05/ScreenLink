@@ -46,6 +46,7 @@ type Streamer struct {
 	cancel         context.CancelFunc
 	mu             sync.Mutex
 	isRunning      bool
+	isPaused       bool
 	frameID        uint64
 }
 
@@ -172,6 +173,7 @@ func (s *Streamer) SetQualityPreset(presetID string) {
 func (s *Streamer) Start() error {
 	s.mu.Lock()
 	if s.isRunning {
+		s.isPaused = false
 		s.mu.Unlock()
 		return nil
 	}
@@ -179,10 +181,29 @@ func (s *Streamer) Start() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancel = cancel
 	s.isRunning = true
+	s.isPaused = false
 	s.mu.Unlock()
 
 	go s.runPipelinedCapture(ctx)
 	return nil
+}
+
+func (s *Streamer) Pause() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.isPaused = true
+}
+
+func (s *Streamer) Resume() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.isPaused = false
+}
+
+func (s *Streamer) IsPaused() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.isPaused
 }
 
 func (s *Streamer) Stop() {
@@ -192,6 +213,7 @@ func (s *Streamer) Stop() {
 		return
 	}
 	s.isRunning = false
+	s.isPaused = false
 	if s.cancel != nil {
 		s.cancel()
 		s.cancel = nil
@@ -222,7 +244,13 @@ func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 					fps := s.targetFPS
 					idx := s.displayIndex
 					broadcaster := s.broadcaster
+					paused := s.isPaused
 					s.mu.Unlock()
+
+					if paused {
+						time.Sleep(100 * time.Millisecond)
+						continue
+					}
 
 					if fps < 30 {
 						fps = 30
@@ -281,7 +309,12 @@ func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 					s.mu.Lock()
 					quality := s.jpegQuality
 					broadcaster := s.broadcaster
+					paused := s.isPaused
 					s.mu.Unlock()
+
+					if paused {
+						continue
+					}
 
 					hasLocalViewers := (broadcaster != nil && broadcaster.HasApprovedViewers())
 					if !hasLocalViewers {

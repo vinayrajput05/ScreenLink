@@ -26,11 +26,17 @@ export function GetSharingStatus():Promise<boolean>;
 
 export function GetSystemInfo():Promise<main.SystemInfo>;
 
+export function IsScreenPaused():Promise<boolean>;
+
 export function IsScreenStreaming():Promise<boolean>;
 
 export function OnClientStateChanged():Promise<void>;
 
+export function PauseScreenShare():Promise<void>;
+
 export function RejectClient(arg1:string):Promise<void>;
+
+export function ResumeScreenShare():Promise<void>;
 
 export function SelectDisplay(arg1:string):Promise<void>;
 

@@ -1,9 +1,11 @@
 import React from 'react';
-import { Monitor, Play, Square, RefreshCw, Layers, Radio, Sliders } from 'lucide-react';
+import { Monitor, Play, Square, Pause, RefreshCw, Layers, Radio, Sliders } from 'lucide-react';
 import { DisplayInfo, QualityPreset, ServerStatus } from '../types';
 
 interface ScreenControlCardProps {
   status: ServerStatus;
+  isScreenActive?: boolean;
+  isPaused?: boolean;
   displays: DisplayInfo[];
   selectedDisplay: string;
   onSelectDisplay: (id: string) => void;
@@ -11,11 +13,15 @@ interface ScreenControlCardProps {
   selectedQuality: string;
   onSelectQuality: (id: string) => void;
   onStartSharing: () => void;
+  onPauseSharing?: () => void;
+  onResumeSharing?: () => void;
   onStopSharing: () => void;
 }
 
 export const ScreenControlCard: React.FC<ScreenControlCardProps> = ({
   status,
+  isScreenActive = false,
+  isPaused = false,
   displays,
   selectedDisplay,
   onSelectDisplay,
@@ -23,12 +29,12 @@ export const ScreenControlCard: React.FC<ScreenControlCardProps> = ({
   selectedQuality,
   onSelectQuality,
   onStartSharing,
+  onPauseSharing,
+  onResumeSharing,
   onStopSharing,
 }) => {
-  const isRunning = status === 'running';
   const isStarting = status === 'starting';
-
-  const currentDisplay = displays.find((d) => d.id === selectedDisplay) || displays[0];
+  const isStreaming = status === 'running' && isScreenActive;
   const currentPreset = qualityPresets.find((q) => q.id === selectedQuality) || qualityPresets[0];
 
   return (
@@ -47,10 +53,12 @@ export const ScreenControlCard: React.FC<ScreenControlCardProps> = ({
             </div>
           </div>
 
-          {isRunning && currentPreset && (
+          {isStreaming && currentPreset && (
             <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-[11px] font-mono text-emerald-300">
-              <Radio className="w-3 h-3 text-emerald-400 animate-pulse" />
-              <span>{currentPreset.targetFps} FPS • {currentPreset.name}</span>
+              <Radio className={`w-3 h-3 ${isPaused ? 'text-amber-400' : 'text-emerald-400 animate-pulse'}`} />
+              <span>
+                {isPaused ? '⏸ PAUSED' : `${currentPreset.targetFps} FPS • ${currentPreset.name}`}
+              </span>
             </div>
           )}
         </div>
@@ -68,7 +76,7 @@ export const ScreenControlCard: React.FC<ScreenControlCardProps> = ({
             <select
               value={selectedDisplay}
               onChange={(e) => onSelectDisplay(e.target.value)}
-              disabled={isRunning || isStarting}
+              disabled={isStreaming || isStarting}
               className="w-full px-4 py-3 bg-[#090d17]/90 border border-slate-700/80 rounded-2xl text-sm font-semibold text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed appearance-none cursor-pointer transition shadow-inner"
             >
               {displays.map((disp) => (
@@ -90,7 +98,7 @@ export const ScreenControlCard: React.FC<ScreenControlCardProps> = ({
               <Sliders className="w-3.5 h-3.5 text-indigo-400" />
               <span>Framerate & Performance Profile</span>
             </label>
-            {isRunning && (
+            {isStreaming && (
               <span className="text-[10px] text-cyan-400 font-medium">✨ Live dynamic adjustment</span>
             )}
           </div>
@@ -125,9 +133,9 @@ export const ScreenControlCard: React.FC<ScreenControlCardProps> = ({
         </div>
       </div>
 
-      {/* Action Button */}
+      {/* Action Buttons: Start / Pause / Resume / Stop */}
       <div className="pt-4 mt-3 border-t border-slate-800/60">
-        {!isRunning ? (
+        {!isStreaming ? (
           <button
             onClick={onStartSharing}
             disabled={isStarting}
@@ -136,7 +144,7 @@ export const ScreenControlCard: React.FC<ScreenControlCardProps> = ({
             {isStarting ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Starting Screen Stream...</span>
+                <span>Starting Stream...</span>
               </>
             ) : (
               <>
@@ -146,13 +154,34 @@ export const ScreenControlCard: React.FC<ScreenControlCardProps> = ({
             )}
           </button>
         ) : (
-          <button
-            onClick={onStopSharing}
-            className="w-full flex items-center justify-center gap-2.5 px-5 py-3.5 bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 active:scale-[0.99] text-white font-bold text-sm rounded-2xl shadow-lg shadow-rose-500/25 hover:shadow-rose-500/40 transition duration-200 cursor-pointer"
-          >
-            <Square className="w-4 h-4 fill-white" />
-            <span>Stop Sharing</span>
-          </button>
+          <div className="flex items-center gap-3">
+            {isPaused ? (
+              <button
+                onClick={onResumeSharing}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-3.5 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-sm rounded-2xl shadow-lg shadow-emerald-500/25 transition cursor-pointer"
+              >
+                <Play className="w-4 h-4 fill-white" />
+                <span>Resume Stream</span>
+              </button>
+            ) : (
+              <button
+                onClick={onPauseSharing}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-3.5 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white font-bold text-sm rounded-2xl shadow-lg shadow-amber-500/25 transition cursor-pointer"
+              >
+                <Pause className="w-4 h-4 fill-white" />
+                <span>Pause Stream</span>
+              </button>
+            )}
+
+            <button
+              onClick={onStopSharing}
+              className="flex items-center justify-center gap-2 px-5 py-3.5 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 font-bold text-sm rounded-2xl border border-rose-500/40 transition cursor-pointer"
+              title="Stop Screen Streaming"
+            >
+              <Square className="w-4 h-4 fill-rose-300" />
+              <span>Stop</span>
+            </button>
+          </div>
         )}
       </div>
     </div>

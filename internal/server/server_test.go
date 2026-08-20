@@ -133,17 +133,25 @@ func TestServerWebSocketApprovalFlow(t *testing.T) {
 	// Test announcement broadcast
 	srv.BroadcastAnnouncement("Hello mobile phone!")
 
-	_, annBytes, err := ws.ReadMessage()
-	if err != nil {
-		t.Fatalf("Failed to read announcement: %v", err)
+	var foundAnnouncement bool
+	for i := 0; i < 3; i++ {
+		_, msgBytes, err := ws.ReadMessage()
+		if err != nil {
+			t.Fatalf("Failed to read message: %v", err)
+		}
+
+		var m WsMessage
+		if err := json.Unmarshal(msgBytes, &m); err != nil {
+			t.Fatalf("Failed to parse message: %v", err)
+		}
+
+		if m.Type == "announcement" && strings.Contains(m.Message, "Hello mobile phone!") {
+			foundAnnouncement = true
+			break
+		}
 	}
 
-	var annResp WsMessage
-	if err := json.Unmarshal(annBytes, &annResp); err != nil {
-		t.Fatalf("Failed to parse announcement: %v", err)
-	}
-
-	if annResp.Type != "announcement" || !strings.Contains(annResp.Message, "Hello mobile phone!") {
-		t.Errorf("Unexpected announcement message: %+v", annResp)
+	if !foundAnnouncement {
+		t.Errorf("Expected to receive announcement message with 'Hello mobile phone!'")
 	}
 }

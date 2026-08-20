@@ -46,6 +46,10 @@ export function GetSystemInfo() {
   return window['go']['main']['App']['GetSystemInfo']();
 }
 
+export function IsScreenPaused() {
+  return window['go']['main']['App']['IsScreenPaused']();
+}
+
 export function IsScreenStreaming() {
   return window['go']['main']['App']['IsScreenStreaming']();
 }
@@ -54,8 +58,16 @@ export function OnClientStateChanged() {
   return window['go']['main']['App']['OnClientStateChanged']();
 }
 
+export function PauseScreenShare() {
+  return window['go']['main']['App']['PauseScreenShare']();
+}
+
 export function RejectClient(arg1) {
   return window['go']['main']['App']['RejectClient'](arg1);
+}
+
+export function ResumeScreenShare() {
+  return window['go']['main']['App']['ResumeScreenShare']();
 }
 
 export function SelectDisplay(arg1) {
