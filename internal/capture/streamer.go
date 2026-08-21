@@ -266,6 +266,22 @@ func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 						continue
 					}
 
+					// Render mouse cursor if it is on current display
+					if curX, curY, ok := getCursorPos(); ok {
+						if curX >= bounds.Min.X && curX < bounds.Max.X &&
+							curY >= bounds.Min.Y && curY < bounds.Max.Y {
+							imgW := img.Bounds().Dx()
+							imgH := img.Bounds().Dy()
+							boundW := bounds.Dx()
+							boundH := bounds.Dy()
+							if boundW > 0 && boundH > 0 {
+								relX := (curX - bounds.Min.X) * imgW / boundW
+								relY := (curY - bounds.Min.Y) * imgH / boundH
+								DrawCursor(img, relX, relY)
+							}
+						}
+					}
+
 					select {
 					case frameChan <- rawFrame{img: img, width: bounds.Dx(), height: bounds.Dy()}:
 					case <-ctx.Done():
