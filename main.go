@@ -18,7 +18,7 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:             "ScreenLink — Host Dashboard",
+		Title:             "ScreenLink — By https://vinayrajput.in",
 		Width:             1140,
 		Height:            840,
 		MinWidth:          920,

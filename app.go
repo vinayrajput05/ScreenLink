@@ -68,10 +68,11 @@ func NewApp() *App {
 // startup is called when the app starts.
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	// Auto-start background local server and screen capture streamer on launch for zero-delay instant sharing
+	// Auto-start background local server on launch so chat & code sharing is instantly active,
+	// but screen capture remains idle until the host clicks the Start button.
 	go func() {
 		time.Sleep(150 * time.Millisecond)
-		_, _ = a.StartSharing(a.currentPort)
+		_, _ = a.ensureServerRunning(a.currentPort)
 	}()
 }
 

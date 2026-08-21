@@ -21,17 +21,31 @@ interface AnnouncementCardProps {
 }
 
 const LANGUAGES = [
+  { id: 'text', label: 'Plain Text / Notes' },
   { id: 'javascript', label: 'JavaScript' },
   { id: 'typescript', label: 'TypeScript' },
   { id: 'python', label: 'Python' },
-  { id: 'html', label: 'HTML/CSS' },
-  { id: 'go', label: 'Go' },
+  { id: 'html', label: 'HTML' },
+  { id: 'css', label: 'CSS' },
+  { id: 'go', label: 'Go (Golang)' },
   { id: 'rust', label: 'Rust' },
   { id: 'java', label: 'Java' },
-  { id: 'cpp', label: 'C++' },
-  { id: 'sql', label: 'SQL' },
+  { id: 'cpp', label: 'C / C++' },
+  { id: 'csharp', label: 'C# (.NET)' },
+  { id: 'php', label: 'PHP' },
+  { id: 'ruby', label: 'Ruby' },
+  { id: 'swift', label: 'Swift' },
+  { id: 'kotlin', label: 'Kotlin' },
+  { id: 'dart', label: 'Dart / Flutter' },
+  { id: 'sql', label: 'SQL / Database' },
   { id: 'json', label: 'JSON' },
+  { id: 'yaml', label: 'YAML / TOML' },
+  { id: 'markdown', label: 'Markdown' },
   { id: 'bash', label: 'Shell / Bash' },
+  { id: 'powershell', label: 'PowerShell' },
+  { id: 'dockerfile', label: 'Dockerfile' },
+  { id: 'graphql', label: 'GraphQL' },
+  { id: 'xml', label: 'XML' },
 ];
 
 const PRESET_MESSAGES = [

@@ -13,7 +13,6 @@ import { ViewerManagementCard } from './components/ViewerManagementCard';
 import { ScreenControlCard } from './components/ScreenControlCard';
 import { AnnouncementCard } from './components/AnnouncementCard';
 import { QrCodeModal } from './components/QrCodeModal';
-import { MemoryGameModal } from './components/MemoryGameModal';
 import {
   Shield,
   Zap,
@@ -66,7 +65,6 @@ export const App: React.FC = () => {
   const [connectedViewers, setConnectedViewers] = useState<ConnectedViewer[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
-  const [isGameModalOpen, setIsGameModalOpen] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'info' | 'success' | 'warning' } | null>(null);
 
   const showNotification = (message: string, type: 'info' | 'success' | 'warning' = 'info') => {
@@ -394,7 +392,6 @@ export const App: React.FC = () => {
         status={status}
         viewerCount={connectedViewers.length}
         isPaused={isPaused}
-        onOpenGame={() => setIsGameModalOpen(true)}
       />
 
       {/* Main Content Layout (Full Width Grid without Left Sidebar) */}
@@ -483,12 +480,6 @@ export const App: React.FC = () => {
         url={shareUrl}
         availableUrls={availableUrls}
         onSelectUrl={setShareUrl}
-      />
-
-      {/* 6x6 Memory Game Modal */}
-      <MemoryGameModal
-        isOpen={isGameModalOpen}
-        onClose={() => setIsGameModalOpen(false)}
       />
     </div>
   );
