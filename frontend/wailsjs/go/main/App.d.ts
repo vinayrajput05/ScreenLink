@@ -26,6 +26,8 @@ export function GetSharingStatus():Promise<boolean>;
 
 export function GetSystemInfo():Promise<main.SystemInfo>;
 
+export function IsAutoApprove():Promise<boolean>;
+
 export function IsScreenPaused():Promise<boolean>;
 
 export function IsScreenStreaming():Promise<boolean>;
@@ -45,6 +47,8 @@ export function SendAnnouncement(arg1:string):Promise<void>;
 export function SendChatMessage(arg1:string):Promise<void>;
 
 export function SendCodeSnippet(arg1:string,arg2:string,arg3:string):Promise<void>;
+
+export function SetAutoApprove(arg1:boolean):Promise<void>;
 
 export function SetQualityPreset(arg1:string):Promise<void>;
 

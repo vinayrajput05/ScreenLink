@@ -59,6 +59,7 @@ func TestServerWebSocketApprovalFlow(t *testing.T) {
 	dummyHTML := []byte("<!DOCTYPE html><html><body>LANMirror Viewer</body></html>")
 	cb := &mockCallback{}
 	srv := NewServer(8090, dummyHTML, cb)
+	srv.SetAutoApprove(false)
 
 	err := srv.Start()
 	if err != nil {
@@ -153,5 +154,57 @@ func TestServerWebSocketApprovalFlow(t *testing.T) {
 
 	if !foundAnnouncement {
 		t.Errorf("Expected to receive announcement message with 'Hello mobile phone!'")
+	}
+}
+
+func TestServerWebSocketAutoApprovalFlow(t *testing.T) {
+	dummyHTML := []byte("<!DOCTYPE html><html><body>LANMirror Viewer</body></html>")
+	cb := &mockCallback{}
+	srv := NewServer(8091, dummyHTML, cb)
+	// AutoApprove is true by default
+
+	err := srv.Start()
+	if err != nil {
+		t.Fatalf("Failed to start server: %v", err)
+	}
+	defer srv.Stop()
+
+	time.Sleep(100 * time.Millisecond)
+
+	wsURL := "ws://127.0.0.1:8091/ws"
+	ws, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("Failed to connect websocket: %v", err)
+	}
+	defer ws.Close()
+
+	req := WsMessage{
+		Type:        "connection_request",
+		ClientID:    "test-auto-phone-456",
+		DisplayName: "Auto Phone",
+	}
+	reqBytes, _ := json.Marshal(req)
+	if err := ws.WriteMessage(websocket.TextMessage, reqBytes); err != nil {
+		t.Fatalf("Failed to send connection request: %v", err)
+	}
+
+	// Read immediate approved status
+	_, respBytes, err := ws.ReadMessage()
+	if err != nil {
+		t.Fatalf("Failed to read approved response: %v", err)
+	}
+
+	var resp WsMessage
+	if err := json.Unmarshal(respBytes, &resp); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+
+	if resp.State != "approved" {
+		t.Errorf("Expected approved state with auto-approve enabled, got %s", resp.State)
+	}
+
+	connected := srv.GetConnectedClients()
+	if len(connected) != 1 || connected[0].DisplayName != "Auto Phone" {
+		t.Errorf("Expected auto-connected client in server, got: %+v", connected)
 	}
 }

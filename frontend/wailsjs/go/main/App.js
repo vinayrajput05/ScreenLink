@@ -46,6 +46,10 @@ export function GetSystemInfo() {
   return window['go']['main']['App']['GetSystemInfo']();
 }
 
+export function IsAutoApprove() {
+  return window['go']['main']['App']['IsAutoApprove']();
+}
+
 export function IsScreenPaused() {
   return window['go']['main']['App']['IsScreenPaused']();
 }
@@ -84,6 +88,10 @@ export function SendChatMessage(arg1) {
 
 export function SendCodeSnippet(arg1, arg2, arg3) {
   return window['go']['main']['App']['SendCodeSnippet'](arg1, arg2, arg3);
+}
+
+export function SetAutoApprove(arg1) {
+  return window['go']['main']['App']['SetAutoApprove'](arg1);
 }
 
 export function SetQualityPreset(arg1) {

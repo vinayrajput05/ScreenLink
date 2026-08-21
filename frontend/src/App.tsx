@@ -42,6 +42,8 @@ import {
   SendChatMessage,
   GetChatMessages,
   ClearChatHistory,
+  SetAutoApprove,
+  IsAutoApprove,
 } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 
@@ -63,6 +65,7 @@ export const App: React.FC = () => {
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
   const [connectedViewers, setConnectedViewers] = useState<ConnectedViewer[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [autoApprove, setAutoApproveState] = useState(true);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'info' | 'success' | 'warning' } | null>(null);
 
@@ -338,6 +341,22 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleToggleAutoApprove = async () => {
+    const nextState = !autoApprove;
+    setAutoApproveState(nextState);
+    try {
+      if (typeof SetAutoApprove === 'function') {
+        await SetAutoApprove(nextState);
+      }
+      showNotification(
+        nextState ? 'Auto-Approve enabled: LAN viewers connect instantly' : 'Auto-Approve disabled: Manual approval required',
+        'info'
+      );
+    } catch (err) {
+      console.error('Auto-approve toggle error:', err);
+    }
+  };
+
   const handleSendMessage = async (text: string) => {
     try {
       if (typeof SendChatMessage === 'function') {
@@ -432,6 +451,8 @@ export const App: React.FC = () => {
             <ViewerManagementCard
               pendingRequests={pendingRequests}
               connectedViewers={connectedViewers}
+              autoApprove={autoApprove}
+              onToggleAutoApprove={handleToggleAutoApprove}
               onApprove={handleApproveRequest}
               onReject={handleRejectRequest}
               onApproveAll={handleApproveAll}
