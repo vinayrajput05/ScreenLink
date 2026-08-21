@@ -41,25 +41,27 @@ type ClientsPayload struct {
 
 // App struct
 type App struct {
-	ctx            context.Context
-	server         *server.Server
-	streamer       *capture.Streamer
-	serverMu       sync.Mutex
-	isServerActive bool
-	isScreenActive bool
-	isPaused       bool
-	currentPort    int
-	currentQuality string
-	messages       []server.ChatMessage
-	msgMu          sync.Mutex
+	ctx              context.Context
+	server           *server.Server
+	streamer         *capture.Streamer
+	serverMu         sync.Mutex
+	isServerActive   bool
+	isScreenActive   bool
+	isPaused         bool
+	currentPort      int
+	currentQuality   string
+	currentDisplayID string
+	messages         []server.ChatMessage
+	msgMu            sync.Mutex
 }
 
 // NewApp creates a new App application struct
 func NewApp() *App {
 	return &App{
-		currentPort:    8080,
-		currentQuality: "30fps",
-		messages:       make([]server.ChatMessage, 0),
+		currentPort:      8080,
+		currentQuality:   "30fps",
+		currentDisplayID: "0",
+		messages:         make([]server.ChatMessage, 0),
 	}
 }
 
@@ -213,12 +215,20 @@ func (a *App) StartSharing(port int) (bool, error) {
 	if a.streamer == nil {
 		streamer := capture.NewStreamer(srv)
 		streamer.SetQualityPreset(quality)
+		displays := capture.GetAvailableDisplays()
+		for i, d := range displays {
+			if d.ID == a.currentDisplayID {
+				streamer.SetDisplayIndex(i)
+				break
+			}
+		}
 		if err := streamer.Start(); err != nil {
 			a.serverMu.Unlock()
 			return false, fmt.Errorf("failed to start screen capture: %w", err)
 		}
 		a.streamer = streamer
 	} else {
+		a.streamer.SetBroadcaster(srv)
 		a.streamer.Resume()
 	}
 	a.isScreenActive = true

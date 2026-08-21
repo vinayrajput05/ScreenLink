@@ -192,11 +192,14 @@ export const App: React.FC = () => {
 
   const handleStartShare = async () => {
     try {
+      if (typeof SelectDisplay === 'function') {
+        await SelectDisplay(selectedDisplayId);
+      }
       if (typeof SetQualityPreset === 'function') {
         await SetQualityPreset(selectedQuality);
       }
       if (typeof StartSharing === 'function') {
-        await StartSharing(Number(selectedDisplayId) || 0);
+        await StartSharing(0);
       }
       setIsScreenActive(true);
       setIsPaused(false);

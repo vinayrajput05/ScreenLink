@@ -36,6 +36,9 @@ export namespace clients {
 	    requestedAt: string;
 	    connectedAt: string;
 	    durationMinutes: number;
+	    bandwidthKbps: number;
+	    latencyMs: number;
+	    signalBars: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new ClientDTO(source);
@@ -51,6 +54,9 @@ export namespace clients {
 	        this.requestedAt = source["requestedAt"];
 	        this.connectedAt = source["connectedAt"];
 	        this.durationMinutes = source["durationMinutes"];
+	        this.bandwidthKbps = source["bandwidthKbps"];
+	        this.latencyMs = source["latencyMs"];
+	        this.signalBars = source["signalBars"];
 	    }
 	}
 

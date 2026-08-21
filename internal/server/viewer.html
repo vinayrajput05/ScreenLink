@@ -854,10 +854,6 @@
 
       socket.onmessage = (event) => {
         if (event.data instanceof ArrayBuffer) {
-          if (isStreamPaused) {
-            // Drop frames when stream is paused or stopped by host
-            return;
-          }
           handleBinaryFrame(event.data);
           return;
         }
@@ -878,18 +874,20 @@
             } else if (data.state === 'active') {
               setStreamPauseState(false);
             }
-          } else if (data.type === 'chat_message' && data.chatPayload) {
-            appendMessageToSidebar(data.chatPayload);
+          } else if (data.type === 'chat_message' || data.type === 'code' || data.type === 'announcement') {
+            const msgObj = data.chatPayload || {
+              id: data.id || ('msg-' + Date.now()),
+              type: data.type,
+              title: data.title || '',
+              message: data.message || '',
+              language: data.language || '',
+              isCode: !!data.isCode,
+              sentAt: data.sent_at || data.sentAt || '',
+              sender: data.sender || 'Host'
+            };
+            appendMessageToSidebar(msgObj);
           } else if (data.type === 'chat_history' && Array.isArray(data.history)) {
-            data.history.reverse().forEach(msg => appendMessageToSidebar(msg, true));
-          } else if (data.type === 'announcement') {
-            appendMessageToSidebar({
-              id: 'ann-' + Date.now(),
-              type: 'announcement',
-              message: data.message,
-              sentAt: data.sent_at || '',
-              isCode: false
-            });
+            data.history.slice().reverse().forEach(msg => appendMessageToSidebar(msg, true));
           }
         } catch (err) {
           console.error("Invalid text message:", err);
@@ -1034,7 +1032,7 @@
     }
 
     function handleBinaryFrame(buffer) {
-      if (isStreamPaused || buffer.byteLength < 13) return;
+      if (buffer.byteLength < 13) return;
 
       // Track incoming network bytes and frame count
       bytesReceivedWindow += buffer.byteLength;
@@ -1043,6 +1041,11 @@
       const view = new DataView(buffer);
       const msgType = view.getUint8(0);
       if (msgType !== 0x11) return; // 0x11 FULL_FRAME
+
+      // If live frames are arriving, ensure pause state is deactivated
+      if (isStreamPaused) {
+        setStreamPauseState(false);
+      }
 
       const width = view.getUint16(9);
       const height = view.getUint16(11);
@@ -1056,7 +1059,7 @@
             canvas.width = width;
             canvas.height = height;
             const statusEl = document.getElementById('stream-status');
-            if (statusEl && !isStreamPaused) statusEl.textContent = `${width}×${height} • HD Live`;
+            if (statusEl) statusEl.textContent = `${width}×${height} • HD Live`;
           }
           ctx.drawImage(bitmap, 0, 0);
           bitmap.close();
@@ -1084,7 +1087,7 @@
           canvas.width = width;
           canvas.height = height;
           const statusEl = document.getElementById('stream-status');
-          if (statusEl && !isStreamPaused) statusEl.textContent = `${width}×${height} • HD Live`;
+          if (statusEl) statusEl.textContent = `${width}×${height} • HD Live`;
         }
         ctx.drawImage(img, 0, 0);
         URL.revokeObjectURL(url);
@@ -1107,7 +1110,6 @@
           break;
         case 'approved':
           showView('view-connected');
-          setStreamPauseState(true, 'stopped');
           startMetricsMonitoring();
           break;
         case 'rejected':
