@@ -1,6 +1,7 @@
 import React from 'react';
-import { Cast, Wifi, ShieldCheck, Users, Radio } from 'lucide-react';
+import { ShieldCheck, Users } from 'lucide-react';
 import { ServerStatus } from '../types';
+import appLogo from '../assets/images/logo-universal.png';
 
 interface HeaderProps {
   status: ServerStatus;
@@ -47,10 +48,11 @@ export const Header: React.FC<HeaderProps> = ({ status, viewerCount }) => {
   return (
     <header className="flex flex-wrap items-center justify-between gap-4 px-6 py-4 bg-[#0d121f]/90 backdrop-blur-xl border-b border-slate-800/80 sticky top-0 z-40">
       <div className="flex items-center gap-3.5">
-        <div className="relative p-2.5 bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-500 rounded-2xl shadow-glow-brand text-white flex items-center justify-center">
-          <Cast className="w-6 h-6" />
-          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-cyan-400 rounded-full border-2 border-[#0d121f]" />
-        </div>
+        <img
+          src={appLogo}
+          alt="ScreenLink Logo"
+          className="w-10 h-10 rounded-2xl shadow-glow-brand object-contain p-1 bg-[#090e1a] border border-cyan-500/30"
+        />
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-extrabold text-white tracking-tight bg-gradient-to-r from-white via-slate-100 to-indigo-200 bg-clip-text text-transparent">

@@ -38,6 +38,7 @@ import {
   ClearChatHistory,
 } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
+import appLogo from './assets/images/logo-universal.png';
 
 const DEFAULT_PRESETS: QualityPreset[] = [
   { id: '30fps', name: '30 FPS (Smooth 1080p)', description: 'Minimum 30 FPS • Recommended', maxHeight: 1080, quality: 82, targetFps: 30 },
@@ -375,11 +376,11 @@ export default function App() {
       {/* Header */}
       <header className="px-6 py-4 border-b border-slate-800/80 bg-[#090d17]/80 backdrop-blur-xl sticky top-0 z-40 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-500 rounded-2xl shadow-glow-brand text-white">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-          </div>
+          <img
+            src={appLogo}
+            alt="ScreenLink Logo"
+            className="w-10 h-10 rounded-2xl shadow-glow-brand object-contain p-1 bg-[#090e1a] border border-cyan-500/30"
+          />
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-black tracking-tight text-white">ScreenLink</h1>
