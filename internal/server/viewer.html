@@ -555,7 +555,7 @@
         <canvas id="screen-canvas" class="hidden"></canvas>
 
         <!-- Interactive Memory Card Game (Visible when idle, paused, or stopped) -->
-        <div id="memory-game-wrap" class="memory-game-wrap">
+        <div id="memory-game-wrap" class="memory-game-wrap hidden">
           <div style="max-width:380px; width:100%; text-align:center; margin-bottom:0.75rem;">
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5rem;">
               <div style="display:flex; align-items:center; gap:0.4rem;">
@@ -824,7 +824,14 @@
           statusEl.textContent = (mode === 'paused') ? 'Paused • Memory Game' : 'Connected • Memory Game';
         }
         if (dotEl) dotEl.style.background = '#f59e0b';
-        initMemoryGame();
+        // Only start a fresh game if the board is empty (first time) or the game has been won
+        const boardEl = document.getElementById('game-board');
+        const victoryEl = document.getElementById('game-victory');
+        const boardIsEmpty = !boardEl || boardEl.children.length === 0;
+        const gameWon = victoryEl && !victoryEl.classList.contains('hidden');
+        if (boardIsEmpty || gameWon) {
+          initMemoryGame();
+        }
       } else {
         if (gameContainer) gameContainer.classList.add('hidden');
         if (screenHold) screenHold.classList.add('hidden');
@@ -1098,9 +1105,11 @@
       const msgType = view.getUint8(0);
       if (msgType !== 0x11) return; // 0x11 FULL_FRAME
 
-      // If live frames are arriving, ensure pause state is deactivated
+      // Only auto-resume if the server has NOT explicitly paused or stopped the stream.
+      // Stale in-flight frames arriving after a pause signal must NOT override the pause state.
       if (isStreamPaused) {
-        setStreamPauseState(false);
+        // Drop the frame visually — do not change pause state based on frames alone
+        return;
       }
 
       const width = view.getUint16(9);
