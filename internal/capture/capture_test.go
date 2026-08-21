@@ -30,7 +30,7 @@ func TestDisplayDetectionAndCapture(t *testing.T) {
 	// Test JPEG encoding
 	buf := new(bytes.Buffer)
 	startEnc := time.Now()
-	err = jpeg.Encode(buf, img, &jpeg.Options{Quality: 65})
+	err = jpeg.Encode(buf, img, &jpeg.Options{Quality: 70})
 	if err != nil {
 		t.Fatalf("Failed to encode JPEG: %v", err)
 	}

@@ -41,6 +41,7 @@ type Streamer struct {
 	displayIndex   int
 	targetFPS      int
 	jpegQuality    int
+	maxHeight      int
 	selectedPreset string
 	broadcaster    FrameBroadcaster
 	cancel         context.CancelFunc
@@ -53,8 +54,9 @@ type Streamer struct {
 func NewStreamer(broadcaster FrameBroadcaster) *Streamer {
 	s := &Streamer{
 		displayIndex:   0,
-		targetFPS:      30, // Minimum 30 FPS default
-		jpegQuality:    82,
+		targetFPS:      30,
+		jpegQuality:    72,
+		maxHeight:      1080,
 		selectedPreset: "30fps",
 		broadcaster:    broadcaster,
 	}
@@ -73,17 +75,17 @@ func GetAvailableQualityPresets() []QualityPreset {
 		{
 			ID:          "30fps",
 			Name:        "30 FPS (Smooth 1080p)",
-			Description: "Minimum 30 FPS • Ultra Smooth",
+			Description: "Minimum 30 FPS • Ultra-Low Latency",
 			MaxHeight:   1080,
-			Quality:     82,
+			Quality:     72,
 			TargetFPS:   30,
 		},
 		{
 			ID:          "45fps",
 			Name:        "45 FPS (High Framerate)",
-			Description: "45 FPS High Clarity • Balanced",
+			Description: "45 FPS High Motion • Balanced",
 			MaxHeight:   1080,
-			Quality:     80,
+			Quality:     70,
 			TargetFPS:   45,
 		},
 		{
@@ -91,7 +93,7 @@ func GetAvailableQualityPresets() []QualityPreset {
 			Name:        "60 FPS (Pro Motion)",
 			Description: "60 FPS Pro • Zero Stutter",
 			MaxHeight:   1080,
-			Quality:     78,
+			Quality:     68,
 			TargetFPS:   60,
 		},
 	}
@@ -149,16 +151,20 @@ func (s *Streamer) SetQualityPreset(presetID string) {
 	switch presetID {
 	case "60fps":
 		s.targetFPS = 60
-		s.jpegQuality = 78
+		s.jpegQuality = 68
+		s.maxHeight = 1080
 	case "45fps":
 		s.targetFPS = 45
-		s.jpegQuality = 80
+		s.jpegQuality = 70
+		s.maxHeight = 1080
 	case "clarity_30":
 		s.targetFPS = 30
-		s.jpegQuality = 88
+		s.jpegQuality = 78
+		s.maxHeight = 1080
 	default: // "30fps"
 		s.targetFPS = 30
-		s.jpegQuality = 82
+		s.jpegQuality = 72
+		s.maxHeight = 1080
 	}
 }
 
@@ -213,7 +219,52 @@ func (s *Streamer) Stop() {
 	s.mu.Unlock()
 }
 
-// runPipelinedCapture runs a crash-proof capture & encoding pipeline for 30–60 FPS
+// fastDownscaleRGBA rapidly resizes an RGBA image using direct memory mapping
+func fastDownscaleRGBA(src *image.RGBA, dst *image.RGBA) {
+	srcBounds := src.Bounds()
+	dstBounds := dst.Bounds()
+
+	srcW := srcBounds.Dx()
+	srcH := srcBounds.Dy()
+	dstW := dstBounds.Dx()
+	dstH := dstBounds.Dy()
+
+	if srcW <= 0 || srcH <= 0 || dstW <= 0 || dstH <= 0 {
+		return
+	}
+
+	srcPix := src.Pix
+	dstPix := dst.Pix
+	srcStride := src.Stride
+	dstStride := dst.Stride
+
+	// Precompute X mapping for extreme performance
+	xMap := make([]int, dstW)
+	for dx := 0; dx < dstW; dx++ {
+		xMap[dx] = (dx * srcW / dstW) * 4
+	}
+
+	for dy := 0; dy < dstH; dy++ {
+		sy := dy * srcH / dstH
+		srcRowOffset := sy * srcStride
+		dstRowOffset := dy * dstStride
+
+		for dx := 0; dx < dstW; dx++ {
+			sx4 := xMap[dx]
+			sOff := srcRowOffset + sx4
+			dOff := dstRowOffset + dx*4
+
+			if sOff+3 < len(srcPix) && dOff+3 < len(dstPix) {
+				dstPix[dOff] = srcPix[sOff]
+				dstPix[dOff+1] = srcPix[sOff+1]
+				dstPix[dOff+2] = srcPix[sOff+2]
+				dstPix[dOff+3] = 255
+			}
+		}
+	}
+}
+
+// runPipelinedCapture runs a zero-latency capture & encoding pipeline
 func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 	type rawFrame struct {
 		img    image.Image
@@ -221,10 +272,10 @@ func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 		height int
 	}
 
-	// 1-slot buffered channel to guarantee zero-latency (always latest frame)
+	// 1-slot buffered channel ensures absolute zero frame buffering/backlog
 	frameChan := make(chan rawFrame, 1)
 
-	// 1. Encoder Worker
+	// 1. Dedicated Ultra-Fast Encoder Worker
 	go func() {
 		defer func() {
 			_ = recover()
@@ -232,6 +283,8 @@ func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 
 		buf := new(bytes.Buffer)
 		rawJpegBuf := new(bytes.Buffer)
+		var resizedBuf *image.RGBA
+		var lastTargetW, lastTargetH int
 
 		for {
 			select {
@@ -247,6 +300,7 @@ func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 
 				s.mu.Lock()
 				quality := s.jpegQuality
+				maxH := s.maxHeight
 				broadcaster := s.broadcaster
 				paused := s.isPaused
 				s.mu.Unlock()
@@ -255,8 +309,34 @@ func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 					continue
 				}
 
+				imgToEncode := frame.img
+				finalW := frame.width
+				finalH := frame.height
+
+				// Downscale if higher than max configured resolution (e.g. 1080p limit)
+				if maxH > 0 && frame.height > maxH {
+					targetH := maxH
+					targetW := (frame.width * targetH) / frame.height
+					if targetW%2 != 0 {
+						targetW--
+					}
+
+					if resizedBuf == nil || lastTargetW != targetW || lastTargetH != targetH {
+						resizedBuf = image.NewRGBA(image.Rect(0, 0, targetW, targetH))
+						lastTargetW = targetW
+						lastTargetH = targetH
+					}
+
+					if rgba, ok := frame.img.(*image.RGBA); ok {
+						fastDownscaleRGBA(rgba, resizedBuf)
+						imgToEncode = resizedBuf
+						finalW = targetW
+						finalH = targetH
+					}
+				}
+
 				rawJpegBuf.Reset()
-				err := jpeg.Encode(rawJpegBuf, frame.img, &jpeg.Options{Quality: quality})
+				err := jpeg.Encode(rawJpegBuf, imgToEncode, &jpeg.Options{Quality: quality})
 				if err != nil {
 					continue
 				}
@@ -266,8 +346,8 @@ func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 				fid := atomic.AddUint64(&s.frameID, 1)
 				_ = buf.WriteByte(0x11)
 				_ = binary.Write(buf, binary.BigEndian, fid)
-				_ = binary.Write(buf, binary.BigEndian, uint16(frame.width))
-				_ = binary.Write(buf, binary.BigEndian, uint16(frame.height))
+				_ = binary.Write(buf, binary.BigEndian, uint16(finalW))
+				_ = binary.Write(buf, binary.BigEndian, uint16(finalH))
 				_, _ = buf.Write(jpegBytes)
 
 				broadcaster.BroadcastFrame(buf.Bytes())
@@ -275,7 +355,7 @@ func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 		}
 	}()
 
-	// 2. Single Dedicated Capture Loop (avoids macOS CoreGraphics thread collisions)
+	// 2. High-Performance Screen Capture Loop
 	defer func() {
 		_ = recover()
 	}()
@@ -293,7 +373,7 @@ func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 			s.mu.Unlock()
 
 			if paused {
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(60 * time.Millisecond)
 				continue
 			}
 
@@ -303,7 +383,7 @@ func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 
 			hasViewers := (broadcaster != nil && broadcaster.HasApprovedViewers())
 			if !hasViewers {
-				time.Sleep(60 * time.Millisecond)
+				time.Sleep(50 * time.Millisecond)
 				continue
 			}
 
@@ -311,7 +391,7 @@ func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 
 			num := screenshot.NumActiveDisplays()
 			if num <= 0 {
-				time.Sleep(100 * time.Millisecond)
+				time.Sleep(80 * time.Millisecond)
 				continue
 			}
 
@@ -327,11 +407,11 @@ func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 
 			img, err := screenshot.CaptureRect(bounds)
 			if err != nil || img == nil {
-				time.Sleep(20 * time.Millisecond)
+				time.Sleep(15 * time.Millisecond)
 				continue
 			}
 
-			// Render mouse cursor if it is on current display
+			// Render mouse cursor if on current display
 			if curX, curY, ok := getCursorPos(); ok {
 				if curX >= bounds.Min.X && curX < bounds.Max.X &&
 					curY >= bounds.Min.Y && curY < bounds.Max.Y {
@@ -347,13 +427,13 @@ func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 				}
 			}
 
-			// Non-blocking send: if encoder is busy, drop stale frame
+			// Non-blocking handoff to encoder worker (drops stale frames immediately if encoder is busy)
 			select {
 			case frameChan <- rawFrame{img: img, width: bounds.Dx(), height: bounds.Dy()}:
 			default:
 			}
 
-			// Precise framerate sleep
+			// Exact framerate pacing
 			targetInterval := time.Duration(1000/fps) * time.Millisecond
 			elapsed := time.Since(frameStart)
 			if elapsed < targetInterval {

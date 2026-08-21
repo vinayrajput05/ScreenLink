@@ -362,9 +362,9 @@
 
     .game-board {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 0.6rem;
-      max-width: 360px;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 0.45rem;
+      max-width: 480px;
       width: 100%;
       perspective: 1000px;
     }
@@ -388,12 +388,23 @@
       height: 100%;
       backface-visibility: hidden;
       -webkit-backface-visibility: hidden;
-      border-radius: 0.85rem;
+      border-radius: 0.65rem;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.6rem;
+      font-size: 1.3rem;
       box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+    }
+
+    @media (max-width: 480px) {
+      .game-board {
+        gap: 0.3rem;
+        max-width: 340px;
+      }
+      .card-face {
+        border-radius: 0.45rem;
+        font-size: 1.05rem;
+      }
     }
 
     .card-back {
@@ -556,13 +567,13 @@
 
         <!-- Interactive Memory Card Game (Visible when idle, paused, or stopped) -->
         <div id="memory-game-wrap" class="memory-game-wrap hidden">
-          <div style="max-width:380px; width:100%; text-align:center; margin-bottom:0.75rem;">
+          <div style="max-width:480px; width:100%; text-align:center; margin-bottom:0.75rem;">
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5rem;">
               <div style="display:flex; align-items:center; gap:0.4rem;">
                 <span id="game-status-badge" style="padding:0.2rem 0.5rem; background:rgba(245,158,11,0.2); color:#fbbf24; border:1px solid rgba(245,158,11,0.4); border-radius:0.5rem; font-size:0.65rem; font-weight:800;">
                   🎮 SCREEN SHARING IDLE
                 </span>
-                <span style="font-size:0.75rem; font-weight:800; color:#fff;">Memory Game</span>
+                <span style="font-size:0.75rem; font-weight:800; color:#fff;">Memory Game (6x6)</span>
               </div>
               <button onclick="initMemoryGame()" style="padding:0.2rem 0.5rem; background:#1e293b; color:#cbd5e1; border:1px solid #334155; border-radius:0.5rem; font-size:0.65rem; font-weight:700; cursor:pointer;">
                 🔄 Restart
@@ -572,12 +583,12 @@
             <!-- Stats Bar -->
             <div style="display:flex; align-items:center; justify-content:space-around; padding:0.4rem 0.75rem; background:rgba(15,23,42,0.8); border:1px solid #334155; border-radius:0.75rem; font-size:0.7rem; font-family:monospace; color:#94a3b8;">
               <div>Moves: <span id="game-moves" style="color:#60a5fa; font-weight:bold;">0</span></div>
-              <div>Matches: <span id="game-matches" style="color:#34d399; font-weight:bold;">0 / 8</span></div>
+              <div>Matches: <span id="game-matches" style="color:#34d399; font-weight:bold;">0 / 18</span></div>
               <div>Time: <span id="game-time" style="color:#f59e0b; font-weight:bold;">00:00</span></div>
             </div>
           </div>
 
-          <!-- 4x4 Card Grid -->
+          <!-- 6x6 Card Grid -->
           <div id="game-board" class="game-board"></div>
 
           <!-- Victory Banner -->
@@ -1094,6 +1105,9 @@
       container.insertBefore(card, container.firstChild);
     }
 
+    let isDecodingFrame = false;
+    let pendingFrameBuffer = null;
+
     function handleBinaryFrame(buffer) {
       if (buffer.byteLength < 13) return;
 
@@ -1101,16 +1115,21 @@
       bytesReceivedWindow += buffer.byteLength;
       framesRenderedWindow++;
 
+      if (isStreamPaused) return;
+
+      // If already decoding a frame, hold the latest buffer to render next, dropping intermediate stale frames
+      if (isDecodingFrame) {
+        pendingFrameBuffer = buffer;
+        return;
+      }
+
+      renderFrameBuffer(buffer);
+    }
+
+    function renderFrameBuffer(buffer) {
       const view = new DataView(buffer);
       const msgType = view.getUint8(0);
       if (msgType !== 0x11) return; // 0x11 FULL_FRAME
-
-      // Only auto-resume if the server has NOT explicitly paused or stopped the stream.
-      // Stale in-flight frames arriving after a pause signal must NOT override the pause state.
-      if (isStreamPaused) {
-        // Drop the frame visually — do not change pause state based on frames alone
-        return;
-      }
 
       const width = view.getUint16(9);
       const height = view.getUint16(11);
@@ -1119,6 +1138,7 @@
       const blob = new Blob([jpegData], { type: 'image/jpeg' });
 
       if (typeof createImageBitmap === 'function') {
+        isDecodingFrame = true;
         createImageBitmap(blob, { imageOrientation: 'none', premultiplyAlpha: 'none' }).then(bitmap => {
           if (canvas.width !== width || canvas.height !== height) {
             canvas.width = width;
@@ -1136,7 +1156,15 @@
             gameWrap.classList.add('hidden');
           }
           canvas.classList.remove('hidden');
+
+          isDecodingFrame = false;
+          if (pendingFrameBuffer) {
+            const nextBuf = pendingFrameBuffer;
+            pendingFrameBuffer = null;
+            renderFrameBuffer(nextBuf);
+          }
         }).catch(err => {
+          isDecodingFrame = false;
           fallbackRenderBlob(blob, width, height);
         });
       } else {
@@ -1163,6 +1191,12 @@
           gameWrap.classList.add('hidden');
         }
         canvas.classList.remove('hidden');
+
+        if (pendingFrameBuffer) {
+          const nextBuf = pendingFrameBuffer;
+          pendingFrameBuffer = null;
+          renderFrameBuffer(nextBuf);
+        }
       };
       img.src = url;
     }
@@ -1236,9 +1270,13 @@
     }
 
     /* -------------------------------------------------------------
-       Interactive Memory Card Game Implementation
+       Interactive Memory Card Game Implementation (6x6 Grid)
        ------------------------------------------------------------- */
-    const GAME_SYMBOLS = ['🚀', '💻', '⚡', '🎮', '🧠', '🎨', '🔥', '💎'];
+    const GAME_SYMBOLS = [
+      '🚀', '💻', '⚡', '🎮', '🧠', '🎨',
+      '🔥', '💎', '🎯', '🌟', '🦄', '🪐',
+      '🔮', '🎧', '🏆', '🍕', '🐱', '🌈'
+    ];
     let gameCards = [];
     let flippedCards = [];
     let matchedPairs = 0;
@@ -1246,9 +1284,12 @@
     let gameTimer = null;
     let gameSeconds = 0;
     let isGameLocked = false;
+    let isTimerRunning = false;
 
     function initMemoryGame() {
       clearInterval(gameTimer);
+      gameTimer = null;
+      isTimerRunning = false;
       gameSeconds = 0;
       gameMoves = 0;
       matchedPairs = 0;
@@ -1262,14 +1303,14 @@
       const boardEl = document.getElementById('game-board');
 
       if (movesEl) movesEl.textContent = '0';
-      if (matchesEl) matchesEl.textContent = '0 / 8';
+      if (matchesEl) matchesEl.textContent = '0 / 18';
       if (timeEl) timeEl.textContent = '00:00';
       if (victoryEl) victoryEl.classList.add('hidden');
       if (!boardEl) return;
 
       boardEl.innerHTML = '';
 
-      // Create shuffled deck of 16 cards (8 pairs)
+      // Create shuffled deck of 36 cards (18 pairs)
       const deck = [...GAME_SYMBOLS, ...GAME_SYMBOLS].sort(() => Math.random() - 0.5);
       gameCards = deck.map((symbol, index) => ({
         id: index,
@@ -1286,7 +1327,7 @@
 
         cardEl.innerHTML = `
           <div class="card-face card-back">
-            <svg style="width:1.25rem; height:1.25rem; opacity:0.6;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            <svg style="width:1.1rem; height:1.1rem; opacity:0.6;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
           </div>
           <div class="card-face card-front">${card.symbol}</div>
         `;
@@ -1294,20 +1335,24 @@
         cardEl.onclick = () => onCardClick(card.id, cardEl);
         boardEl.appendChild(cardEl);
       });
-
-      // Start timer
-      gameTimer = setInterval(() => {
-        gameSeconds++;
-        const mins = String(Math.floor(gameSeconds / 60)).padStart(2, '0');
-        const secs = String(gameSeconds % 60).padStart(2, '0');
-        if (timeEl) timeEl.textContent = `${mins}:${secs}`;
-      }, 1000);
     }
 
     function onCardClick(cardId, cardEl) {
       if (isGameLocked) return;
       const card = gameCards.find(c => c.id === cardId);
       if (!card || card.matched || card.flipped) return;
+
+      // Start timer on first user interaction
+      if (!isTimerRunning) {
+        isTimerRunning = true;
+        gameTimer = setInterval(() => {
+          gameSeconds++;
+          const mins = String(Math.floor(gameSeconds / 60)).padStart(2, '0');
+          const secs = String(gameSeconds % 60).padStart(2, '0');
+          const timeEl = document.getElementById('game-time');
+          if (timeEl) timeEl.textContent = `${mins}:${secs}`;
+        }, 1000);
+      }
 
       // Flip card
       card.flipped = true;
@@ -1329,12 +1374,13 @@
           matchedPairs++;
 
           const matchesEl = document.getElementById('game-matches');
-          if (matchesEl) matchesEl.textContent = `${matchedPairs} / 8`;
+          if (matchesEl) matchesEl.textContent = `${matchedPairs} / 18`;
 
           flippedCards = [];
 
-          if (matchedPairs === 8) {
+          if (matchedPairs === 18) {
             clearInterval(gameTimer);
+            isTimerRunning = false;
             const victoryEl = document.getElementById('game-victory');
             const victoryMovesEl = document.getElementById('victory-moves');
             if (victoryMovesEl) victoryMovesEl.textContent = gameMoves;

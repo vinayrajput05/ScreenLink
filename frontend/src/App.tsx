@@ -13,6 +13,7 @@ import { ViewerManagementCard } from './components/ViewerManagementCard';
 import { ScreenControlCard } from './components/ScreenControlCard';
 import { AnnouncementCard } from './components/AnnouncementCard';
 import { QrCodeModal } from './components/QrCodeModal';
+import { MemoryGameModal } from './components/MemoryGameModal';
 import {
   Shield,
   Zap,
@@ -65,6 +66,7 @@ export const App: React.FC = () => {
   const [connectedViewers, setConnectedViewers] = useState<ConnectedViewer[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const [isGameModalOpen, setIsGameModalOpen] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'info' | 'success' | 'warning' } | null>(null);
 
   const showNotification = (message: string, type: 'info' | 'success' | 'warning' = 'info') => {
@@ -120,13 +122,11 @@ export const App: React.FC = () => {
         const sysInfo = await GetSystemInfo();
         if (sysInfo && Array.isArray(sysInfo.ipAddresses) && sysInfo.ipAddresses.length > 0) {
           const port = sysInfo.defaultPort || 8080;
-          const urls = sysInfo.ipAddresses.map((ip: string) => `http://${ip}:${port}`);
-          
-          // Ensure 127.0.0.1 is included
-          const hasLocalhost = urls.some((u: string) => u.includes('127.0.0.1') || u.includes('localhost'));
-          if (!hasLocalhost) {
-            urls.push(`http://127.0.0.1:${port}`);
+          let validIps = sysInfo.ipAddresses;
+          if (validIps.length > 1) {
+            validIps = validIps.filter((ip: string) => ip !== '127.0.0.1' && ip !== 'localhost');
           }
+          const urls = validIps.map((ip: string) => `http://${ip}:${port}`);
 
           setAvailableUrls(urls);
           setShareUrl((prev) => {
@@ -390,7 +390,12 @@ export const App: React.FC = () => {
   return (
     <div className="h-screen flex flex-col bg-[#f8fafc] text-slate-800 font-sans antialiased overflow-hidden">
       {/* Top Header */}
-      <Header status={status} viewerCount={connectedViewers.length} isPaused={isPaused} />
+      <Header
+        status={status}
+        viewerCount={connectedViewers.length}
+        isPaused={isPaused}
+        onOpenGame={() => setIsGameModalOpen(true)}
+      />
 
       {/* Main Content Layout (Full Width Grid without Left Sidebar) */}
       <main className="flex-1 min-h-0 max-w-7xl w-full mx-auto p-6 overflow-hidden flex flex-col">
@@ -478,6 +483,12 @@ export const App: React.FC = () => {
         url={shareUrl}
         availableUrls={availableUrls}
         onSelectUrl={setShareUrl}
+      />
+
+      {/* 6x6 Memory Game Modal */}
+      <MemoryGameModal
+        isOpen={isGameModalOpen}
+        onClose={() => setIsGameModalOpen(false)}
       />
     </div>
   );

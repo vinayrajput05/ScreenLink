@@ -68,10 +68,10 @@ func NewApp() *App {
 // startup is called when the app starts.
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	// Auto-start background local server on launch so chat & code sharing is instantly active
+	// Auto-start background local server and screen capture streamer on launch for zero-delay instant sharing
 	go func() {
-		time.Sleep(200 * time.Millisecond)
-		_, _ = a.ensureServerRunning(a.currentPort)
+		time.Sleep(150 * time.Millisecond)
+		_, _ = a.StartSharing(a.currentPort)
 	}()
 }
 
@@ -119,11 +119,11 @@ func (a *App) OnClientStateChanged() {
 	}
 }
 
-// GetSharingStatus returns true if screen sharing server is running
+// GetSharingStatus returns current status of the server
 func (a *App) GetSharingStatus() bool {
 	a.serverMu.Lock()
 	defer a.serverMu.Unlock()
-	return a.isServerActive
+	return a.isServerActive && a.isScreenActive
 }
 
 // IsScreenStreaming returns true if screen capture streamer is actively streaming
@@ -140,72 +140,72 @@ func (a *App) IsScreenPaused() bool {
 	return a.isPaused
 }
 
-// GetQualityPresets returns stream resolution presets
-func (a *App) GetQualityPresets() []capture.QualityPreset {
-	return capture.GetAvailableQualityPresets()
-}
-
-// SetQualityPreset updates stream quality and resolution dynamically
-func (a *App) SetQualityPreset(presetID string) {
-	a.serverMu.Lock()
-	a.currentQuality = presetID
-	streamer := a.streamer
-	a.serverMu.Unlock()
-
-	if streamer != nil {
-		streamer.SetQualityPreset(presetID)
-	}
-}
-
-// GetDisplays returns the list of detected displays on host machine
+// GetDisplays returns all detectable connected monitors
 func (a *App) GetDisplays() []DisplayInfo {
 	displays := capture.GetAvailableDisplays()
-	result := make([]DisplayInfo, 0)
-	for _, d := range displays {
-		result = append(result, DisplayInfo{
+	result := make([]DisplayInfo, len(displays))
+	for i, d := range displays {
+		result[i] = DisplayInfo{
 			ID:         d.ID,
 			Name:       d.Name,
 			Resolution: d.Resolution,
 			IsPrimary:  d.IsPrimary,
-		})
+		}
 	}
 	return result
 }
 
-// SelectDisplay changes the active display being captured
+// SelectDisplay changes the active display for the streamer
 func (a *App) SelectDisplay(displayID string) {
 	a.serverMu.Lock()
-	streamer := a.streamer
-	a.serverMu.Unlock()
+	defer a.serverMu.Unlock()
+	a.currentDisplayID = displayID
 
-	if streamer != nil {
+	if a.streamer != nil {
 		displays := capture.GetAvailableDisplays()
 		for i, d := range displays {
 			if d.ID == displayID {
-				streamer.SetDisplayIndex(i)
+				a.streamer.SetDisplayIndex(i)
 				break
 			}
 		}
 	}
 }
 
-// GetSystemInfo dynamically discovers real LAN IPv4 addresses from the machine
+// GetQualityPresets returns streaming FPS and quality presets
+func (a *App) GetQualityPresets() []capture.QualityPreset {
+	return capture.GetAvailableQualityPresets()
+}
+
+// SetQualityPreset updates quality profile dynamically
+func (a *App) SetQualityPreset(presetID string) {
+	a.serverMu.Lock()
+	defer a.serverMu.Unlock()
+	a.currentQuality = presetID
+
+	if a.streamer != nil {
+		a.streamer.SetQualityPreset(presetID)
+	}
+}
+
+// GetSystemInfo dynamically discovers real LAN IPv4 addresses from the machine (excludes localhost when LAN IP is available)
 func (a *App) GetSystemInfo() SystemInfo {
 	ips, err := network.GetLocalIPv4Addresses()
 	if err != nil || len(ips) == 0 {
 		ips = []string{"127.0.0.1"}
 	}
 
-	// Ensure 127.0.0.1 is included at the end so localhost is always an available link option
-	hasLoopback := false
-	for _, ip := range ips {
-		if ip == "127.0.0.1" {
-			hasLoopback = true
-			break
+	// Filter out loopback 127.0.0.1 if real LAN IPs are found
+	if len(ips) > 1 {
+		var lanIps []string
+		for _, ip := range ips {
+			if ip != "127.0.0.1" && ip != "localhost" {
+				lanIps = append(lanIps, ip)
+			}
 		}
-	}
-	if !hasLoopback {
-		ips = append(ips, "127.0.0.1")
+		if len(lanIps) > 0 {
+			ips = lanIps
+		}
 	}
 
 	port := a.currentPort
