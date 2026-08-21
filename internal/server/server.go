@@ -21,10 +21,12 @@ var logoPNG []byte
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all local LAN origins
+		return true // Allow all origins: LAN, hotspot, and local network
 	},
-	ReadBufferSize:  8192,
-	WriteBufferSize: 131072, // Support long source code snippets
+	ReadBufferSize:  16384,
+	WriteBufferSize: 262144, // 256KB write buffer for high-FPS frame streaming
+	HandshakeTimeout: 10 * time.Second,
+	EnableCompression: false, // Disable per-message compression; JPEG is already compressed
 }
 
 type ServerCallback interface {
@@ -112,9 +114,11 @@ func (s *Server) Start() error {
 
 	s.listener = listener
 	s.httpServer = &http.Server{
-		Handler:      mux,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		Handler:     mux,
+		ReadTimeout: 60 * time.Second,
+		// WriteTimeout intentionally omitted: setting it would kill long-lived WebSocket
+		// and streaming connections. HTTP handler timeouts are managed per-connection.
+		IdleTimeout: 120 * time.Second,
 	}
 
 	s.clientsMu.Lock()
@@ -135,7 +139,7 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) heartbeatLoop() {
-	ticker := time.NewTicker(4 * time.Second)
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -143,9 +147,17 @@ func (s *Server) heartbeatLoop() {
 		case <-s.stopChan:
 			return
 		case <-ticker.C:
+			nowMs := time.Now().UnixMilli()
+			pingMsg, _ := json.Marshal(WsMessage{
+				Type:      "ping",
+				Timestamp: nowMs,
+			})
 			s.clientsMu.RLock()
 			for _, client := range s.clients {
-				_ = client.SafeSend(websocket.PingMessage, []byte{})
+				if client.State == clients.ClientApproved {
+					// Send JSON ping so client JS can respond and we measure latency
+					_ = client.SafeSend(websocket.TextMessage, pingMsg)
+				}
 			}
 			s.clientsMu.RUnlock()
 		}
@@ -232,10 +244,12 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	userAgent := r.UserAgent()
 	browser := simplifyUserAgent(userAgent)
 
-	conn.SetReadLimit(524288) // 512 KB limit for code snippets
-	_ = conn.SetReadDeadline(time.Now().Add(20 * time.Second))
+	conn.SetReadLimit(1048576) // 1 MB — support large code snippets and control messages
+	// Give 60 seconds for the initial connection handshake — Wi-Fi page loads can be slow
+	_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	conn.SetPongHandler(func(string) error {
-		_ = conn.SetReadDeadline(time.Now().Add(20 * time.Second))
+		// Refresh read deadline on any pong (WebSocket-level keepalive)
+		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		return nil
 	})
 
@@ -258,7 +272,9 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			break
 		}
-		_ = conn.SetReadDeadline(time.Now().Add(20 * time.Second))
+		// Refresh read deadline on every message received (not just pong)
+		// This keeps the connection alive even on high-latency Wi-Fi
+		_ = conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
 		var msg WsMessage
 		if err := json.Unmarshal(msgBytes, &msg); err != nil {
@@ -333,6 +349,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			}
 
 		case "ping":
+			// Client-initiated ping: measure RTT and echo pong
 			if currentClientID != "" && msg.Timestamp > 0 {
 				nowMs := time.Now().UnixMilli()
 				rtt := int(nowMs - msg.Timestamp)
@@ -348,6 +365,19 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				Timestamp: msg.Timestamp,
 			})
 			_ = conn.WriteMessage(websocket.TextMessage, pongBytes)
+
+		case "pong":
+			// Client responding to server heartbeat ping — measure RTT
+			if currentClientID != "" && msg.Timestamp > 0 {
+				nowMs := time.Now().UnixMilli()
+				rtt := int(nowMs - msg.Timestamp)
+				s.clientsMu.RLock()
+				client, ok := s.clients[currentClientID]
+				if ok {
+					client.UpdateLatency(rtt)
+				}
+				s.clientsMu.RUnlock()
+			}
 
 		case "cancel_request":
 			if currentClientID != "" {

@@ -162,7 +162,13 @@ func (c *Client) SafeSend(messageType int, data []byte) error {
 	if c.Conn == nil {
 		return nil
 	}
-	_ = c.Conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+	// Binary frames (video) get a shorter deadline to avoid blocking the encoder
+	// Text frames (chat, control) get more time to handle high-latency Wi-Fi
+	deadline := 8 * time.Second
+	if messageType == 2 { // BinaryMessage
+		deadline = 4 * time.Second
+	}
+	_ = c.Conn.SetWriteDeadline(time.Now().Add(deadline))
 	err := c.Conn.WriteMessage(messageType, data)
 	if err == nil {
 		c.bytesSentWindow += int64(len(data))

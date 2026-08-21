@@ -833,7 +833,37 @@
       }
     }
 
+    let reconnectAttempts = 0;
+    let reconnectTimeout = null;
+    let isIntentionalClose = false;
+    const MAX_RECONNECT_DELAY_MS = 8000;
+
+    function getReconnectDelay() {
+      // Exponential backoff: 500ms, 1s, 2s, 4s, 8s (capped)
+      return Math.min(500 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY_MS);
+    }
+
+    function scheduleReconnect(displayName) {
+      if (isIntentionalClose) return;
+      const delay = getReconnectDelay();
+      reconnectAttempts++;
+
+      const statusEl = document.getElementById('stream-status');
+      const dotEl = document.getElementById('stream-dot');
+      if (statusEl) statusEl.textContent = `Reconnecting in ${Math.round(delay / 1000)}s… (attempt ${reconnectAttempts})`;
+      if (dotEl) dotEl.style.background = '#f59e0b';
+
+      reconnectTimeout = setTimeout(() => {
+        connectWebSocket(displayName);
+      }, delay);
+    }
+
     function connectWebSocket(displayName) {
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+      }
+
       if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
         return;
       }
@@ -841,10 +871,17 @@
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/ws`;
 
-      socket = new WebSocket(wsUrl);
+      try {
+        socket = new WebSocket(wsUrl);
+      } catch(e) {
+        console.error('Failed to create WebSocket:', e);
+        scheduleReconnect(displayName);
+        return;
+      }
       socket.binaryType = 'arraybuffer';
 
       socket.onopen = () => {
+        reconnectAttempts = 0; // Reset on successful connect
         socket.send(JSON.stringify({
           type: 'connection_request',
           client_id: clientId,
@@ -860,7 +897,15 @@
 
         try {
           const data = JSON.parse(event.data);
-          if (data.type === 'pong' && data.t) {
+          if (data.type === 'ping' && data.t) {
+            // Server-sent ping: echo back as pong with same timestamp
+            if (socket && socket.readyState === WebSocket.OPEN) {
+              socket.send(JSON.stringify({ type: 'pong', t: data.t }));
+            }
+            currentPingMs = Math.max(1, Date.now() - data.t);
+            const pingEl = document.getElementById('metric-ping');
+            if (pingEl) pingEl.textContent = currentPingMs + ' ms';
+          } else if (data.type === 'pong' && data.t) {
             currentPingMs = Math.max(1, Date.now() - data.t);
             const pingEl = document.getElementById('metric-ping');
             if (pingEl) pingEl.textContent = currentPingMs + ' ms';
@@ -894,8 +939,19 @@
         }
       };
 
-      socket.onclose = () => {};
-      socket.onerror = (err) => { console.error("WebSocket error:", err); };
+      socket.onclose = (event) => {
+        // Auto-reconnect unless the close was intentional (e.g. rejected/ended)
+        const INTENTIONAL_CODES = [1000, 1001];
+        const wasClean = event.wasClean && INTENTIONAL_CODES.includes(event.code);
+        if (!isIntentionalClose && !wasClean) {
+          scheduleReconnect(displayName);
+        }
+      };
+
+      socket.onerror = (err) => {
+        console.error("WebSocket error:", err);
+        // onclose will fire after onerror, which triggers reconnect
+      };
     }
 
     function copyTextToClipboard(text) {
@@ -1113,15 +1169,17 @@
           startMetricsMonitoring();
           break;
         case 'rejected':
+          isIntentionalClose = true;
           showView('view-rejected');
           stopMetricsMonitoring();
-          if (socket) socket.close();
+          if (socket) socket.close(1000, 'rejected');
           break;
         case 'disconnected':
         case 'server_stopped':
+          isIntentionalClose = true;
           showView('view-ended');
           stopMetricsMonitoring();
-          if (socket) socket.close();
+          if (socket) socket.close(1000, 'host_stopped');
           break;
       }
     }
@@ -1131,6 +1189,9 @@
       const name = defaultInput ? defaultInput.value.trim() : "Viewer";
       if (!name) return;
 
+      isIntentionalClose = false;
+      reconnectAttempts = 0;
+
       localStorage.setItem('screenlink_display_name', name);
       const waitingNameEl = document.getElementById('waiting-device-name');
       if (waitingNameEl) waitingNameEl.textContent = name;
@@ -1139,9 +1200,10 @@
     }
 
     function handleCancelRequest() {
+      isIntentionalClose = true;
       if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ type: 'cancel_request', client_id: clientId }));
-        socket.close();
+        socket.close(1000, 'user_cancelled');
       }
       showView('view-request');
     }
