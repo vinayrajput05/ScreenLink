@@ -367,28 +367,6 @@ func (a *App) ApproveAll() {
 	}
 }
 
-// SetAutoApprove configures automatic approval for new viewers
-func (a *App) SetAutoApprove(enabled bool) {
-	a.serverMu.Lock()
-	srv := a.server
-	a.serverMu.Unlock()
-
-	if srv != nil {
-		srv.SetAutoApprove(enabled)
-	}
-}
-
-// IsAutoApprove returns true if auto approval is active
-func (a *App) IsAutoApprove() bool {
-	a.serverMu.Lock()
-	srv := a.server
-	a.serverMu.Unlock()
-
-	if srv != nil {
-		return srv.IsAutoApprove()
-	}
-	return true
-}
 
 // DisconnectClient disconnects an approved viewer
 func (a *App) DisconnectClient(clientID string) {

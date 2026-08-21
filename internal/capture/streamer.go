@@ -213,7 +213,7 @@ func (s *Streamer) Stop() {
 	s.mu.Unlock()
 }
 
-// runPipelinedCapture runs a multi-threaded parallel capture & encoding pipeline for 30–60 FPS
+// runPipelinedCapture runs a crash-proof capture & encoding pipeline for 30–60 FPS
 func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 	type rawFrame struct {
 		img    image.Image
@@ -221,137 +221,144 @@ func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 		height int
 	}
 
-	frameChan := make(chan rawFrame, 4)
+	// 1-slot buffered channel to guarantee zero-latency (always latest frame)
+	frameChan := make(chan rawFrame, 1)
 
-	// 1. Parallel Capture Workers (interleaved to guarantee 30+ FPS)
-	numWorkers := 3
-	for w := 0; w < numWorkers; w++ {
-		go func(workerID int) {
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					s.mu.Lock()
-					fps := s.targetFPS
-					idx := s.displayIndex
-					broadcaster := s.broadcaster
-					paused := s.isPaused
-					s.mu.Unlock()
-
-					if paused {
-						time.Sleep(100 * time.Millisecond)
-						continue
-					}
-
-					if fps < 30 {
-						fps = 30
-					}
-
-					hasLocalViewers := (broadcaster != nil && broadcaster.HasApprovedViewers())
-					if !hasLocalViewers {
-						time.Sleep(80 * time.Millisecond)
-						continue
-					}
-
-					num := screenshot.NumActiveDisplays()
-					if idx >= num {
-						idx = 0
-					}
-					bounds := screenshot.GetDisplayBounds(idx)
-
-					img, err := screenshot.CaptureRect(bounds)
-					if err != nil {
-						time.Sleep(20 * time.Millisecond)
-						continue
-					}
-
-					// Render mouse cursor if it is on current display
-					if curX, curY, ok := getCursorPos(); ok {
-						if curX >= bounds.Min.X && curX < bounds.Max.X &&
-							curY >= bounds.Min.Y && curY < bounds.Max.Y {
-							imgW := img.Bounds().Dx()
-							imgH := img.Bounds().Dy()
-							boundW := bounds.Dx()
-							boundH := bounds.Dy()
-							if boundW > 0 && boundH > 0 {
-								relX := (curX - bounds.Min.X) * imgW / boundW
-								relY := (curY - bounds.Min.Y) * imgH / boundH
-								DrawCursor(img, relX, relY)
-							}
-						}
-					}
-
-					select {
-					case frameChan <- rawFrame{img: img, width: bounds.Dx(), height: bounds.Dy()}:
-					case <-ctx.Done():
-						return
-					default:
-						// Drop frame if buffer full to avoid latency build-up
-					}
-
-					// Interleave delay
-					interval := time.Duration(1000/fps) * time.Millisecond
-					time.Sleep(interval)
-				}
-			}
-		}(w)
-	}
-
-	// 2. Parallel Encoder Workers
-	numEncoders := 3
-	for e := 0; e < numEncoders; e++ {
-		go func() {
-			buf := new(bytes.Buffer)
-			rawJpegBuf := new(bytes.Buffer)
-
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case frame, ok := <-frameChan:
-					if !ok {
-						return
-					}
-
-					s.mu.Lock()
-					quality := s.jpegQuality
-					broadcaster := s.broadcaster
-					paused := s.isPaused
-					s.mu.Unlock()
-
-					if paused {
-						continue
-					}
-
-					hasLocalViewers := (broadcaster != nil && broadcaster.HasApprovedViewers())
-					if !hasLocalViewers {
-						continue
-					}
-
-					rawJpegBuf.Reset()
-					err := jpeg.Encode(rawJpegBuf, frame.img, &jpeg.Options{Quality: quality})
-					if err != nil {
-						continue
-					}
-					jpegBytes := rawJpegBuf.Bytes()
-
-					// Broadcast to local Wi-Fi viewers
-					if broadcaster != nil {
-						buf.Reset()
-						fid := atomic.AddUint64(&s.frameID, 1)
-						_ = buf.WriteByte(0x11)
-						_ = binary.Write(buf, binary.BigEndian, fid)
-						_ = binary.Write(buf, binary.BigEndian, uint16(frame.width))
-						_ = binary.Write(buf, binary.BigEndian, uint16(frame.height))
-						_, _ = buf.Write(jpegBytes)
-
-						broadcaster.BroadcastFrame(buf.Bytes())
-					}
-				}
-			}
+	// 1. Encoder Worker
+	go func() {
+		defer func() {
+			_ = recover()
 		}()
-	}
 
-	<-ctx.Done()
+		buf := new(bytes.Buffer)
+		rawJpegBuf := new(bytes.Buffer)
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case frame, ok := <-frameChan:
+				if !ok {
+					return
+				}
+				if frame.img == nil {
+					continue
+				}
+
+				s.mu.Lock()
+				quality := s.jpegQuality
+				broadcaster := s.broadcaster
+				paused := s.isPaused
+				s.mu.Unlock()
+
+				if paused || broadcaster == nil || !broadcaster.HasApprovedViewers() {
+					continue
+				}
+
+				rawJpegBuf.Reset()
+				err := jpeg.Encode(rawJpegBuf, frame.img, &jpeg.Options{Quality: quality})
+				if err != nil {
+					continue
+				}
+				jpegBytes := rawJpegBuf.Bytes()
+
+				buf.Reset()
+				fid := atomic.AddUint64(&s.frameID, 1)
+				_ = buf.WriteByte(0x11)
+				_ = binary.Write(buf, binary.BigEndian, fid)
+				_ = binary.Write(buf, binary.BigEndian, uint16(frame.width))
+				_ = binary.Write(buf, binary.BigEndian, uint16(frame.height))
+				_, _ = buf.Write(jpegBytes)
+
+				broadcaster.BroadcastFrame(buf.Bytes())
+			}
+		}
+	}()
+
+	// 2. Single Dedicated Capture Loop (avoids macOS CoreGraphics thread collisions)
+	defer func() {
+		_ = recover()
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			s.mu.Lock()
+			fps := s.targetFPS
+			idx := s.displayIndex
+			broadcaster := s.broadcaster
+			paused := s.isPaused
+			s.mu.Unlock()
+
+			if paused {
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+
+			if fps < 30 {
+				fps = 30
+			}
+
+			hasViewers := (broadcaster != nil && broadcaster.HasApprovedViewers())
+			if !hasViewers {
+				time.Sleep(60 * time.Millisecond)
+				continue
+			}
+
+			frameStart := time.Now()
+
+			num := screenshot.NumActiveDisplays()
+			if num <= 0 {
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+
+			if idx < 0 || idx >= num {
+				idx = 0
+			}
+
+			bounds := screenshot.GetDisplayBounds(idx)
+			if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
+				time.Sleep(50 * time.Millisecond)
+				continue
+			}
+
+			img, err := screenshot.CaptureRect(bounds)
+			if err != nil || img == nil {
+				time.Sleep(20 * time.Millisecond)
+				continue
+			}
+
+			// Render mouse cursor if it is on current display
+			if curX, curY, ok := getCursorPos(); ok {
+				if curX >= bounds.Min.X && curX < bounds.Max.X &&
+					curY >= bounds.Min.Y && curY < bounds.Max.Y {
+					imgW := img.Bounds().Dx()
+					imgH := img.Bounds().Dy()
+					boundW := bounds.Dx()
+					boundH := bounds.Dy()
+					if boundW > 0 && boundH > 0 && imgW > 0 && imgH > 0 {
+						relX := (curX - bounds.Min.X) * imgW / boundW
+						relY := (curY - bounds.Min.Y) * imgH / boundH
+						DrawCursor(img, relX, relY)
+					}
+				}
+			}
+
+			// Non-blocking send: if encoder is busy, drop stale frame
+			select {
+			case frameChan <- rawFrame{img: img, width: bounds.Dx(), height: bounds.Dy()}:
+			default:
+			}
+
+			// Precise framerate sleep
+			targetInterval := time.Duration(1000/fps) * time.Millisecond
+			elapsed := time.Since(frameStart)
+			if elapsed < targetInterval {
+				time.Sleep(targetInterval - elapsed)
+			}
+		}
+	}
 }

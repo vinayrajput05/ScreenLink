@@ -14,8 +14,6 @@ import { PendingRequest, ConnectedViewer } from '../types';
 interface ViewerManagementCardProps {
   pendingRequests: PendingRequest[];
   connectedViewers: ConnectedViewer[];
-  autoApprove?: boolean;
-  onToggleAutoApprove?: () => void;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
   onApproveAll?: () => void;
@@ -26,8 +24,6 @@ interface ViewerManagementCardProps {
 export const ViewerManagementCard: React.FC<ViewerManagementCardProps> = ({
   pendingRequests,
   connectedViewers,
-  autoApprove = true,
-  onToggleAutoApprove,
   onApprove,
   onReject,
   onApproveAll,
@@ -138,22 +134,6 @@ export const ViewerManagementCard: React.FC<ViewerManagementCardProps> = ({
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2">
-          {onToggleAutoApprove && (
-            <button
-              type="button"
-              onClick={onToggleAutoApprove}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                autoApprove
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200/80 hover:bg-emerald-100/70'
-                  : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
-              }`}
-              title="When enabled, viewers on your LAN connect immediately without waiting"
-            >
-              <ShieldCheck className={`w-3.5 h-3.5 ${autoApprove ? 'text-emerald-600' : 'text-slate-400'}`} />
-              <span>Auto-Approve: {autoApprove ? 'ON' : 'OFF'}</span>
-            </button>
-          )}
-
           {activeTab === 'pending' && pendingRequests.length > 0 && onApproveAll && (
             <button
               onClick={onApproveAll}

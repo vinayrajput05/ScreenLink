@@ -1218,7 +1218,8 @@
     }
 
     function handleDisconnect() {
-      if (socket) socket.close();
+      isIntentionalClose = true;
+      if (socket) socket.close(1000, 'user_exit');
       showView('view-ended');
     }
 

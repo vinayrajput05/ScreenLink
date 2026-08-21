@@ -42,6 +42,9 @@ func DrawCursor(img image.Image, posX, posY int) {
 	if img == nil {
 		return
 	}
+	defer func() {
+		_ = recover()
+	}()
 
 	bounds := img.Bounds()
 
@@ -58,6 +61,7 @@ func DrawCursor(img image.Image, posX, posY int) {
 	}
 
 	rgba, isRGBA := img.(*image.RGBA)
+	nrgba, isNRGBA := img.(*image.NRGBA)
 
 	for row := 0; row < cursorHeight; row++ {
 		line := cursorTemplate[row]
@@ -91,22 +95,34 @@ func DrawCursor(img image.Image, posX, posY int) {
 
 			if isRGBA {
 				offset := rgba.PixOffset(currentX, currentY)
-				if c.A == 255 {
-					rgba.Pix[offset] = c.R
-					rgba.Pix[offset+1] = c.G
-					rgba.Pix[offset+2] = c.B
-					rgba.Pix[offset+3] = 255
-				} else if c.A > 0 {
-					// Alpha blend
-					alpha := uint32(c.A)
-					invAlpha := uint32(255 - c.A)
-					oldR := uint32(rgba.Pix[offset])
-					oldG := uint32(rgba.Pix[offset+1])
-					oldB := uint32(rgba.Pix[offset+2])
+				if offset >= 0 && offset+3 < len(rgba.Pix) {
+					if c.A == 255 {
+						rgba.Pix[offset] = c.R
+						rgba.Pix[offset+1] = c.G
+						rgba.Pix[offset+2] = c.B
+						rgba.Pix[offset+3] = 255
+					} else if c.A > 0 {
+						// Alpha blend
+						alpha := uint32(c.A)
+						invAlpha := uint32(255 - c.A)
+						oldR := uint32(rgba.Pix[offset])
+						oldG := uint32(rgba.Pix[offset+1])
+						oldB := uint32(rgba.Pix[offset+2])
 
-					rgba.Pix[offset] = uint8((uint32(c.R)*alpha + oldR*invAlpha) / 255)
-					rgba.Pix[offset+1] = uint8((uint32(c.G)*alpha + oldG*invAlpha) / 255)
-					rgba.Pix[offset+2] = uint8((uint32(c.B)*alpha + oldB*invAlpha) / 255)
+						rgba.Pix[offset] = uint8((uint32(c.R)*alpha + oldR*invAlpha) / 255)
+						rgba.Pix[offset+1] = uint8((uint32(c.G)*alpha + oldG*invAlpha) / 255)
+						rgba.Pix[offset+2] = uint8((uint32(c.B)*alpha + oldB*invAlpha) / 255)
+					}
+				}
+			} else if isNRGBA {
+				offset := nrgba.PixOffset(currentX, currentY)
+				if offset >= 0 && offset+3 < len(nrgba.Pix) {
+					if c.A == 255 {
+						nrgba.Pix[offset] = c.R
+						nrgba.Pix[offset+1] = c.G
+						nrgba.Pix[offset+2] = c.B
+						nrgba.Pix[offset+3] = 255
+					}
 				}
 			}
 		}

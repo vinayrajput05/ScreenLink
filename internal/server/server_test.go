@@ -59,7 +59,7 @@ func TestServerWebSocketApprovalFlow(t *testing.T) {
 	dummyHTML := []byte("<!DOCTYPE html><html><body>LANMirror Viewer</body></html>")
 	cb := &mockCallback{}
 	srv := NewServer(8090, dummyHTML, cb)
-	srv.SetAutoApprove(false)
+	// New clients start as pending and require manual approval
 
 	err := srv.Start()
 	if err != nil {
@@ -157,11 +157,10 @@ func TestServerWebSocketApprovalFlow(t *testing.T) {
 	}
 }
 
-func TestServerWebSocketAutoApprovalFlow(t *testing.T) {
+func TestServerWebSocketReconnectFlow(t *testing.T) {
 	dummyHTML := []byte("<!DOCTYPE html><html><body>LANMirror Viewer</body></html>")
 	cb := &mockCallback{}
 	srv := NewServer(8091, dummyHTML, cb)
-	// AutoApprove is true by default
 
 	err := srv.Start()
 	if err != nil {
@@ -176,35 +175,59 @@ func TestServerWebSocketAutoApprovalFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect websocket: %v", err)
 	}
-	defer ws.Close()
 
+	// Connect and get pending state
 	req := WsMessage{
 		Type:        "connection_request",
-		ClientID:    "test-auto-phone-456",
-		DisplayName: "Auto Phone",
+		ClientID:    "test-reconnect-789",
+		DisplayName: "Reconnect Phone",
 	}
 	reqBytes, _ := json.Marshal(req)
 	if err := ws.WriteMessage(websocket.TextMessage, reqBytes); err != nil {
 		t.Fatalf("Failed to send connection request: %v", err)
 	}
 
-	// Read immediate approved status
 	_, respBytes, err := ws.ReadMessage()
 	if err != nil {
-		t.Fatalf("Failed to read approved response: %v", err)
+		t.Fatalf("Failed to read response: %v", err)
 	}
 
 	var resp WsMessage
 	if err := json.Unmarshal(respBytes, &resp); err != nil {
 		t.Fatalf("Failed to parse response: %v", err)
 	}
-
-	if resp.State != "approved" {
-		t.Errorf("Expected approved state with auto-approve enabled, got %s", resp.State)
+	if resp.State != "pending" {
+		t.Errorf("Expected pending state, got %s", resp.State)
 	}
 
-	connected := srv.GetConnectedClients()
-	if len(connected) != 1 || connected[0].DisplayName != "Auto Phone" {
-		t.Errorf("Expected auto-connected client in server, got: %+v", connected)
+	// Approve client then simulate reconnect with same ID
+	srv.ApproveClient("test-reconnect-789")
+	ws.Close()
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Reconnect with same client ID — should get approved immediately
+	ws2, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("Failed to reconnect websocket: %v", err)
+	}
+	defer ws2.Close()
+
+	req2Bytes, _ := json.Marshal(req)
+	if err := ws2.WriteMessage(websocket.TextMessage, req2Bytes); err != nil {
+		t.Fatalf("Failed to send reconnect request: %v", err)
+	}
+
+	_, respBytes2, err := ws2.ReadMessage()
+	if err != nil {
+		t.Fatalf("Failed to read reconnect response: %v", err)
+	}
+
+	var resp2 WsMessage
+	if err := json.Unmarshal(respBytes2, &resp2); err != nil {
+		t.Fatalf("Failed to parse reconnect response: %v", err)
+	}
+	if resp2.State != "approved" {
+		t.Errorf("Expected approved on reconnect (same client ID), got %s", resp2.State)
 	}
 }

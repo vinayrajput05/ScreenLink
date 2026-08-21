@@ -45,21 +45,19 @@ type ChatMessage struct {
 }
 
 type Server struct {
-	port        int
-	listener    net.Listener
-	httpServer  *http.Server
-	clients     map[string]*clients.Client
-	clientsMu   sync.RWMutex
-	callback    ServerCallback
-	isRunning   bool
-	viewerHTML  []byte
-	stopChan    chan struct{}
+	port       int
+	listener   net.Listener
+	httpServer *http.Server
+	clients    map[string]*clients.Client
+	clientsMu  sync.RWMutex
+	callback   ServerCallback
+	isRunning  bool
+	viewerHTML []byte
+	stopChan   chan struct{}
 	chatHistory []ChatMessage
-	chatMu      sync.RWMutex
+	chatMu     sync.RWMutex
 	streamState string
-	stateMu     sync.RWMutex
-	autoApprove bool
-	autoApprMu sync.RWMutex
+	stateMu    sync.RWMutex
 }
 
 type WsMessage struct {
@@ -86,7 +84,6 @@ func NewServer(port int, viewerHTML []byte, cb ServerCallback) *Server {
 		stopChan:    make(chan struct{}),
 		chatHistory: make([]ChatMessage, 0),
 		streamState: "stopped",
-		autoApprove: true, // Auto-approve LAN viewers by default for seamless connection
 	}
 }
 
@@ -259,7 +256,16 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		_ = conn.Close()
 		if currentClientID != "" {
 			s.clientsMu.Lock()
-			delete(s.clients, currentClientID)
+			if c, ok := s.clients[currentClientID]; ok {
+				c.Conn = nil
+				// Keep approved clients in the map so they can reconnect without re-approval.
+				// Only remove pending/rejected clients — they have no prior session.
+				if c.State == clients.ClientPending || c.State == clients.ClientRejected {
+					delete(s.clients, currentClientID)
+				} else {
+					c.State = clients.ClientDisconnected
+				}
+			}
 			s.clientsMu.Unlock()
 			if s.callback != nil {
 				go s.callback.OnClientStateChanged()
@@ -306,19 +312,16 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				}
 				s.clients[msg.ClientID] = client
 			} else {
+				// Existing client reconnecting — update their connection
 				client.Conn = conn
 				if strings.TrimSpace(msg.DisplayName) != "" {
 					client.DisplayName = strings.TrimSpace(msg.DisplayName)
 				}
-			}
-
-			s.autoApprMu.RLock()
-			autoAppr := s.autoApprove
-			s.autoApprMu.RUnlock()
-
-			if autoAppr && client.State == clients.ClientPending {
-				client.State = clients.ClientApproved
-				client.ConnectedAt = time.Now()
+				// Re-approve if they were previously approved (disconnected = Wi-Fi blip/reconnect)
+				if client.State == clients.ClientDisconnected {
+					client.State = clients.ClientApproved
+					client.ConnectedAt = time.Now()
+				}
 			}
 
 			currentState := client.State
@@ -686,23 +689,6 @@ func (s *Server) GetConnectedClients() []clients.ClientDTO {
 	return result
 }
 
-func (s *Server) SetAutoApprove(enabled bool) {
-	if s == nil {
-		return
-	}
-	s.autoApprMu.Lock()
-	s.autoApprove = enabled
-	s.autoApprMu.Unlock()
-}
-
-func (s *Server) IsAutoApprove() bool {
-	if s == nil {
-		return true
-	}
-	s.autoApprMu.RLock()
-	defer s.autoApprMu.RUnlock()
-	return s.autoApprove
-}
 
 func simplifyUserAgent(ua string) string {
 	if strings.Contains(ua, "iPhone") {

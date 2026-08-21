@@ -10,10 +10,15 @@ package main
 
 void setMacDockIcon(const void* data, int length) {
     @autoreleasepool {
+        if (data == NULL || length <= 0) return;
+        NSApplication* app = [NSApplication sharedApplication];
+        if (app == nil) return;
         NSData* nsData = [NSData dataWithBytes:data length:length];
-        NSImage* img = [[NSImage alloc] initWithData:nsData];
-        if (img != nil) {
-            [NSApp setApplicationIconImage:img];
+        if (nsData != nil) {
+            NSImage* img = [[NSImage alloc] initWithData:nsData];
+            if (img != nil) {
+                [app setApplicationIconImage:img];
+            }
         }
     }
 }
