@@ -11,6 +11,7 @@ import {
   FileCode2,
 } from 'lucide-react';
 import { ChatMessage } from '../types';
+import { copyToClipboard } from '../utils/clipboard';
 
 interface AnnouncementCardProps {
   messages: ChatMessage[];
@@ -89,12 +90,10 @@ export const AnnouncementCard: React.FC<AnnouncementCardProps> = ({
   };
 
   const handleCopyCode = async (id: string, code: string) => {
-    try {
-      await navigator.clipboard.writeText(code);
+    const ok = await copyToClipboard(code);
+    if (ok) {
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
-    } catch (err) {
-      console.error('Copy code error:', err);
     }
   };
 

@@ -740,6 +740,58 @@
       socket.onerror = (err) => { console.error("WebSocket error:", err); };
     }
 
+    function copyTextToClipboard(text) {
+      if (!text) return Promise.resolve(false);
+
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        return navigator.clipboard.writeText(text).then(() => true).catch(() => {
+          return fallbackCopyText(text);
+        });
+      }
+      return Promise.resolve(fallbackCopyText(text));
+    }
+
+    function fallbackCopyText(text) {
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.top = '0';
+        textArea.style.left = '0';
+        textArea.style.width = '2em';
+        textArea.style.height = '2em';
+        textArea.style.padding = '0';
+        textArea.style.border = 'none';
+        textArea.style.outline = 'none';
+        textArea.style.boxShadow = 'none';
+        textArea.style.background = 'transparent';
+        textArea.style.opacity = '0.01';
+        textArea.setAttribute('readonly', '');
+        document.body.appendChild(textArea);
+
+        if (navigator.userAgent.match(/ipad|iphone/i)) {
+          const range = document.createRange();
+          range.selectNodeContents(textArea);
+          const sel = window.getSelection();
+          if (sel) {
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+          textArea.setSelectionRange(0, 999999);
+        } else {
+          textArea.focus();
+          textArea.select();
+        }
+
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        return successful;
+      } catch (err) {
+        console.error("Fallback clipboard copy error:", err);
+        return false;
+      }
+    }
+
     function appendMessageToSidebar(msg, isHistory) {
       if (!isSidebarVisible() && !isHistory) {
         unreadCount++;
@@ -794,11 +846,18 @@
 
         const copyBtn = document.createElement('button');
         copyBtn.className = "copy-btn";
+        copyBtn.setAttribute('type', 'button');
         copyBtn.innerHTML = `<span>📋 Copy</span>`;
-        copyBtn.onclick = () => {
-          navigator.clipboard.writeText(msg.message);
-          copyBtn.innerHTML = `<span style="color:#34d399;">✓ Copied!</span>`;
-          setTimeout(() => { copyBtn.innerHTML = `<span>📋 Copy</span>`; }, 2000);
+        copyBtn.onclick = async (e) => {
+          e.stopPropagation();
+          const ok = await copyTextToClipboard(msg.message);
+          if (ok) {
+            copyBtn.innerHTML = `<span style="color:#34d399; font-weight:700;">✓ Copied!</span>`;
+            setTimeout(() => { copyBtn.innerHTML = `<span>📋 Copy</span>`; }, 2000);
+          } else {
+            copyBtn.innerHTML = `<span style="color:#f87171; font-weight:700;">Failed</span>`;
+            setTimeout(() => { copyBtn.innerHTML = `<span>📋 Copy</span>`; }, 2000);
+          }
         };
         preWrap.appendChild(copyBtn);
         card.appendChild(preWrap);

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link2, Copy, Check, QrCode, Wifi } from 'lucide-react';
+import { copyToClipboard } from '../utils/clipboard';
 
 interface ShareUrlCardProps {
   shareUrl: string;
@@ -11,12 +12,10 @@ export const ShareUrlCard: React.FC<ShareUrlCardProps> = ({ shareUrl, onShowQr }
 
   const handleCopy = async () => {
     if (!shareUrl) return;
-    try {
-      await navigator.clipboard.writeText(shareUrl);
+    const ok = await copyToClipboard(shareUrl);
+    if (ok) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy URL:', err);
     }
   };
 

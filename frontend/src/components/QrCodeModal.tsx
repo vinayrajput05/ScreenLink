@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { X, Copy, Check, Smartphone, Wifi } from 'lucide-react';
+import { copyToClipboard } from '../utils/clipboard';
 
 interface QrCodeModalProps {
   isOpen: boolean;
@@ -13,10 +14,12 @@ export const QrCodeModal: React.FC<QrCodeModalProps> = ({ isOpen, onClose, url }
 
   if (!isOpen) return null;
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleCopy = async () => {
+    const ok = await copyToClipboard(url);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   return (
