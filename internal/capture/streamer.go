@@ -79,14 +79,6 @@ func GetAvailableQualityPresets() []QualityPreset {
 			TargetFPS:   30,
 		},
 		{
-			ID:          "60fps",
-			Name:        "60 FPS (Pro Motion)",
-			Description: "60 FPS Pro • Zero Stutter",
-			MaxHeight:   1080,
-			Quality:     78,
-			TargetFPS:   60,
-		},
-		{
 			ID:          "45fps",
 			Name:        "45 FPS (High Framerate)",
 			Description: "45 FPS High Clarity • Balanced",
@@ -95,12 +87,12 @@ func GetAvailableQualityPresets() []QualityPreset {
 			TargetFPS:   45,
 		},
 		{
-			ID:          "clarity_30",
-			Name:        "30 FPS (Crisp Text)",
-			Description: "30 FPS • Q88 Razor Sharp",
+			ID:          "60fps",
+			Name:        "60 FPS (Pro Motion)",
+			Description: "60 FPS Pro • Zero Stutter",
 			MaxHeight:   1080,
-			Quality:     88,
-			TargetFPS:   30,
+			Quality:     78,
+			TargetFPS:   60,
 		},
 	}
 }
