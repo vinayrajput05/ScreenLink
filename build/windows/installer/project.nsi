@@ -98,11 +98,18 @@ Section
 
     File "/oname=icon.ico" "..\icon.ico"
 
+    # Delete existing shortcuts first so Windows does not use stale cached icon
+    Delete "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk"
+    Delete "$DESKTOP\${INFO_PRODUCTNAME}.lnk"
+
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}" "" "$INSTDIR\icon.ico" 0
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}" "" "$INSTDIR\icon.ico" 0
 
     !insertmacro wails.associateFiles
     !insertmacro wails.associateCustomProtocols
+
+    # Force Windows Explorer to immediately refresh desktop and taskbar icon caches
+    System::Call 'Shell32::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'
 
     !insertmacro wails.writeUninstaller
 SectionEnd
@@ -121,6 +128,9 @@ Section "uninstall"
 
     !insertmacro wails.unassociateFiles
     !insertmacro wails.unassociateCustomProtocols
+
+    # Force Windows Explorer icon cache update on uninstall
+    System::Call 'Shell32::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'
 
     !insertmacro wails.deleteUninstaller
 SectionEnd
