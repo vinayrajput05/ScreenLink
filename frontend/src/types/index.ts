@@ -42,6 +42,9 @@ export interface ConnectedViewer {
   browser: string;
   connectedAt: string;
   durationMinutes: number;
+  bandwidthKbps?: number;
+  latencyMs?: number;
+  signalBars?: number;
 }
 
 export interface Announcement {

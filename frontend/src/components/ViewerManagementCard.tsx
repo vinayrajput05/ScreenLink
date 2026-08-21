@@ -21,6 +21,35 @@ interface ViewerManagementCardProps {
   onDisconnectAll?: () => void;
 }
 
+const SignalBarsMeter: React.FC<{ bars?: number }> = ({ bars = 4 }) => {
+  const activeBars = Math.max(1, Math.min(4, bars));
+  const getColor = () => {
+    if (activeBars === 4) return 'bg-emerald-500';
+    if (activeBars === 3) return 'bg-emerald-400';
+    if (activeBars === 2) return 'bg-amber-500';
+    return 'bg-rose-500';
+  };
+
+  const colorClass = getColor();
+
+  return (
+    <div className="flex items-end gap-[1.5px] h-2.5 w-3" title={`Signal Quality: ${activeBars}/4 bars`}>
+      <span className={`w-[2.5px] rounded-xs h-[30%] ${activeBars >= 1 ? colorClass : 'bg-slate-300'}`} />
+      <span className={`w-[2.5px] rounded-xs h-[55%] ${activeBars >= 2 ? colorClass : 'bg-slate-300'}`} />
+      <span className={`w-[2.5px] rounded-xs h-[80%] ${activeBars >= 3 ? colorClass : 'bg-slate-300'}`} />
+      <span className={`w-[2.5px] rounded-xs h-[100%] ${activeBars >= 4 ? colorClass : 'bg-slate-300'}`} />
+    </div>
+  );
+};
+
+const formatBandwidth = (kbps?: number) => {
+  if (!kbps || kbps <= 0) return '0 KB/s';
+  if (kbps >= 1024) {
+    return `${(kbps / 1024).toFixed(1)} MB/s`;
+  }
+  return `${kbps} KB/s`;
+};
+
 export const ViewerManagementCard: React.FC<ViewerManagementCardProps> = ({
   pendingRequests,
   connectedViewers,
@@ -228,10 +257,14 @@ export const ViewerManagementCard: React.FC<ViewerManagementCardProps> = ({
                     <h4 className="text-xs font-bold text-slate-800 truncate">
                       {viewer.displayName}
                     </h4>
-                    <div className="flex items-center gap-2 text-[11px] text-slate-500">
+                    <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
                       <span className="font-mono">{viewer.ip || '192.168.1.11'}</span>
                       <span>•</span>
-                      <span className="font-semibold text-slate-600">720p / HD</span>
+                      <div className="inline-flex items-center gap-1 bg-slate-200/70 border border-slate-200 px-1.5 py-0.5 rounded-md text-[10px] font-semibold text-slate-700 font-mono">
+                        <SignalBarsMeter bars={viewer.signalBars || 4} />
+                        <span>{formatBandwidth(viewer.bandwidthKbps)}</span>
+                        <span className="text-slate-400">({viewer.latencyMs || 5}ms)</span>
+                      </div>
                       <span>•</span>
                       <span className="inline-flex items-center gap-1 text-emerald-600 font-semibold">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>

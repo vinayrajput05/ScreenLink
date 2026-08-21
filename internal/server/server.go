@@ -68,6 +68,7 @@ type WsMessage struct {
 	IsCode      bool          `json:"isCode,omitempty"`
 	State       string        `json:"state,omitempty"`
 	SentAt      string        `json:"sent_at,omitempty"`
+	Timestamp   int64         `json:"t,omitempty"`
 	History     []ChatMessage `json:"history,omitempty"`
 	ChatPayload *ChatMessage  `json:"chatPayload,omitempty"`
 }
@@ -317,6 +318,23 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			if s.callback != nil {
 				go s.callback.OnClientStateChanged()
 			}
+
+		case "ping":
+			if currentClientID != "" && msg.Timestamp > 0 {
+				nowMs := time.Now().UnixMilli()
+				rtt := int(nowMs - msg.Timestamp)
+				s.clientsMu.RLock()
+				client, ok := s.clients[currentClientID]
+				if ok {
+					client.UpdateLatency(rtt)
+				}
+				s.clientsMu.RUnlock()
+			}
+			pongBytes, _ := json.Marshal(WsMessage{
+				Type:      "pong",
+				Timestamp: msg.Timestamp,
+			})
+			_ = conn.WriteMessage(websocket.TextMessage, pongBytes)
 
 		case "cancel_request":
 			if currentClientID != "" {
