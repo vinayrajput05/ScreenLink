@@ -364,20 +364,10 @@ export const App: React.FC = () => {
     }
   };
 
-  const totalBandwidthKbps = connectedViewers.reduce(
-    (acc, v) => acc + (v.bandwidthKbps || 0),
-    0
-  );
-
   return (
     <div className="h-screen flex flex-col bg-[#f8fafc] text-slate-800 font-sans antialiased overflow-hidden">
       {/* Top Header */}
-      <Header
-        status={status}
-        viewerCount={connectedViewers.length}
-        isPaused={isPaused}
-        totalBandwidthKbps={totalBandwidthKbps}
-      />
+      <Header status={status} viewerCount={connectedViewers.length} isPaused={isPaused} />
 
       {/* Main Content Layout (Full Width Grid without Left Sidebar) */}
       <main className="flex-1 min-h-0 max-w-7xl w-full mx-auto p-6 overflow-hidden flex flex-col">

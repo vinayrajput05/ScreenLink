@@ -1,5 +1,5 @@
 import React from 'react';
-import { Wifi, Activity } from 'lucide-react';
+import { Wifi } from 'lucide-react';
 import { ServerStatus } from '../types';
 import { appLogoBase64 } from '../assets/logoBase64';
 
@@ -7,23 +7,9 @@ interface HeaderProps {
   status: ServerStatus;
   viewerCount: number;
   isPaused?: boolean;
-  totalBandwidthKbps?: number;
 }
 
-export const Header: React.FC<HeaderProps> = ({
-  status,
-  viewerCount,
-  isPaused,
-  totalBandwidthKbps = 0,
-}) => {
-  const formatBandwidth = (kbps: number) => {
-    if (!kbps || kbps <= 0) return '0 KB/s';
-    if (kbps >= 1024) {
-      return `${(kbps / 1024).toFixed(1)} MB/s`;
-    }
-    return `${kbps} KB/s`;
-  };
-
+export const Header: React.FC<HeaderProps> = ({ status, isPaused }) => {
   return (
     <header className="h-16 px-6 bg-white border-b border-slate-200/90 flex items-center justify-between sticky top-0 z-40 select-none flex-shrink-0">
       {/* Brand & Online State */}
@@ -46,14 +32,6 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right Controls */}
       <div className="flex items-center gap-3">
-        {/* Outgoing Bandwidth Pill (When viewers active) */}
-        {viewerCount > 0 && (
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-slate-100/90 text-slate-700 border border-slate-200/90 rounded-xl text-xs font-mono font-bold shadow-2xs">
-            <Activity className="w-3.5 h-3.5 text-indigo-600 animate-pulse" />
-            <span>{formatBandwidth(totalBandwidthKbps)}</span>
-          </div>
-        )}
-
         {/* Server State Badge */}
         <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200/80 rounded-xl text-xs font-semibold shadow-2xs">
           <Wifi className="w-3.5 h-3.5 text-emerald-600" />
