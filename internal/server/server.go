@@ -1,6 +1,7 @@
 package server
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -14,6 +15,9 @@ import (
 
 	"github.com/gorilla/websocket"
 )
+
+//go:embed logo.png
+var logoPNG []byte
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -92,6 +96,9 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/", s.handleRoot)
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/ws", s.handleWebSocket)
+	mux.HandleFunc("/logo.png", s.handleLogo)
+	mux.HandleFunc("/favicon.png", s.handleLogo)
+	mux.HandleFunc("/favicon.ico", s.handleLogo)
 
 	addr := fmt.Sprintf(":%d", s.port)
 	listener, err := net.Listen("tcp", addr)
@@ -642,3 +649,11 @@ func simplifyUserAgent(ua string) string {
 	}
 	return "Web Browser"
 }
+
+func (s *Server) handleLogo(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(logoPNG)
+}
+

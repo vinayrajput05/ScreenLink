@@ -7,12 +7,18 @@ import {
   ChatMessage,
   ServerStatus,
 } from './types';
-import { ScreenControlCard } from './components/ScreenControlCard';
+import { Header } from './components/Header';
 import { ShareUrlCard } from './components/ShareUrlCard';
-import { PendingRequestsCard } from './components/PendingRequestsCard';
-import { ConnectedViewersCard } from './components/ConnectedViewersCard';
+import { ViewerManagementCard } from './components/ViewerManagementCard';
+import { ScreenControlCard } from './components/ScreenControlCard';
 import { AnnouncementCard } from './components/AnnouncementCard';
 import { QrCodeModal } from './components/QrCodeModal';
+import {
+  Shield,
+  Zap,
+  Tv,
+  Users,
+} from 'lucide-react';
 import {
   GetSystemInfo,
   GetDisplays,
@@ -38,242 +44,225 @@ import {
   ClearChatHistory,
 } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
-import appLogo from './assets/images/logo-universal.png';
 
 const DEFAULT_PRESETS: QualityPreset[] = [
   { id: '30fps', name: '30 FPS (Smooth 1080p)', description: 'Minimum 30 FPS • Recommended', maxHeight: 1080, quality: 82, targetFps: 30 },
   { id: '60fps', name: '60 FPS (Pro Motion)', description: '60 FPS Ultra • Zero Stutter', maxHeight: 1080, quality: 78, targetFps: 60 },
   { id: '45fps', name: '45 FPS (High Action)', description: '45 FPS • High Motion Fluidity', maxHeight: 1080, quality: 80, targetFps: 45 },
-  { id: 'clarity_30', name: '30 FPS (Crisp Text)', description: '30 FPS • Q88 Razor Sharp', maxHeight: 1080, quality: 88, targetFps: 30 },
 ];
 
-export default function App() {
-  const [status, setStatus] = useState<ServerStatus>('stopped');
-  const [isScreenActive, setIsScreenActive] = useState<boolean>(false);
-  const [isPaused, setIsPaused] = useState<boolean>(false);
-
+export const App: React.FC = () => {
+  const [status, setStatus] = useState<ServerStatus>('running');
+  const [isScreenActive, setIsScreenActive] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [shareUrl, setShareUrl] = useState('http://127.0.0.1:8080');
   const [displays, setDisplays] = useState<DisplayInfo[]>([]);
-  const [selectedDisplay, setSelectedDisplay] = useState<string>('display-0');
+  const [selectedDisplayId, setSelectedDisplayId] = useState<string>('0');
   const [qualityPresets, setQualityPresets] = useState<QualityPreset[]>(DEFAULT_PRESETS);
   const [selectedQuality, setSelectedQuality] = useState<string>('30fps');
-  const [ipAddresses, setIpAddresses] = useState<string[]>([]);
-  const [selectedIp, setSelectedIp] = useState<string>('127.0.0.1');
-  const [port, setPort] = useState<number>(8080);
-  
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
   const [connectedViewers, setConnectedViewers] = useState<ConnectedViewer[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  
-  const [isQrModalOpen, setIsQrModalOpen] = useState<boolean>(false);
-  const [notification, setNotification] = useState<{ msg: string; type: 'success' | 'info' | 'error' } | null>(null);
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const [notification, setNotification] = useState<{ message: string; type: 'info' | 'success' | 'warning' } | null>(null);
 
-  const showNotification = (msg: string, type: 'success' | 'info' | 'error' = 'info') => {
-    setNotification({ msg, type });
-    setTimeout(() => {
-      setNotification((curr) => (curr?.msg === msg ? null : curr));
-    }, 3500);
+  const showNotification = (message: string, type: 'info' | 'success' | 'warning' = 'info') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 3500);
   };
-
-  const updateClientStateFromData = useCallback((data: any) => {
-    if (!data) return;
-    const rawPending = Array.isArray(data.pending) ? data.pending : [];
-    const rawConnected = Array.isArray(data.connected) ? data.connected : [];
-
-    setPendingRequests(
-      rawPending.map((p: any) => ({
-        id: p.id,
-        displayName: p.displayName || 'Unknown Device',
-        ip: p.ip || '',
-        browser: p.browser || 'Web Browser',
-        requestedAt: p.requestedAt || 'Just now',
-      }))
-    );
-
-    setConnectedViewers(
-      rawConnected.map((c: any) => ({
-        id: c.id,
-        displayName: c.displayName || 'Connected Viewer',
-        ip: c.ip || '',
-        browser: c.browser || 'Web Browser',
-        connectedAt: c.connectedAt || 'Just now',
-        durationMinutes: c.durationMinutes || 0,
-      }))
-    );
-  }, []);
 
   const syncClients = useCallback(async () => {
     try {
       if (typeof GetClients === 'function') {
-        const data = await GetClients();
-        updateClientStateFromData(data);
+        const payload = await GetClients();
+        if (payload) {
+          setPendingRequests(payload.pending || []);
+          setConnectedViewers(payload.connected || []);
+        }
       }
-      if (typeof GetSharingStatus === 'function') {
-        const running = await GetSharingStatus();
-        setStatus(running ? 'running' : 'stopped');
+    } catch (err) {
+      console.error('Error syncing clients:', err);
+    }
+  }, []);
+
+  const syncChat = useCallback(async () => {
+    try {
+      if (typeof GetChatMessages === 'function') {
+        const history = await GetChatMessages();
+        if (Array.isArray(history)) {
+          setMessages(history);
+        }
       }
+    } catch (err) {
+      console.error('Error syncing chat:', err);
+    }
+  }, []);
+
+  const syncScreenState = useCallback(async () => {
+    try {
       if (typeof IsScreenStreaming === 'function') {
-        const screenRunning = await IsScreenStreaming();
-        setIsScreenActive(screenRunning);
+        const streaming = await IsScreenStreaming();
+        setIsScreenActive(Boolean(streaming));
       }
       if (typeof IsScreenPaused === 'function') {
         const paused = await IsScreenPaused();
-        setIsPaused(paused);
-      }
-      if (typeof GetChatMessages === 'function') {
-        const msgs = await GetChatMessages();
-        if (Array.isArray(msgs)) setMessages(msgs);
+        setIsPaused(Boolean(paused));
       }
     } catch (err) {
-      console.error('Failed to sync state:', err);
+      console.error('Error syncing screen status:', err);
     }
-  }, [updateClientStateFromData]);
+  }, []);
 
   useEffect(() => {
-    async function init() {
+    const initializeData = async () => {
       try {
         if (typeof GetSystemInfo === 'function') {
           const sysInfo = await GetSystemInfo();
-          if (sysInfo && sysInfo.ipAddresses && sysInfo.ipAddresses.length > 0) {
-            setIpAddresses(sysInfo.ipAddresses);
-            setSelectedIp(sysInfo.ipAddresses[0]);
-            if (sysInfo.defaultPort) {
-              setPort(sysInfo.defaultPort);
-            }
+          if (sysInfo && Array.isArray(sysInfo.ipAddresses) && sysInfo.ipAddresses.length > 0) {
+            const port = sysInfo.defaultPort || 8080;
+            setShareUrl(`http://${sysInfo.ipAddresses[0]}:${port}`);
           }
         }
-
         if (typeof GetDisplays === 'function') {
           const dispList = await GetDisplays();
-          if (dispList && dispList.length > 0) {
+          if (Array.isArray(dispList) && dispList.length > 0) {
             setDisplays(dispList);
-            const primary = dispList.find((d) => d.isPrimary) || dispList[0];
-            setSelectedDisplay(primary.id);
+            const primary = dispList.find((d: DisplayInfo) => d.isPrimary);
+            if (primary) setSelectedDisplayId(primary.id);
+            else setSelectedDisplayId(dispList[0].id);
           }
         }
-
         if (typeof GetQualityPresets === 'function') {
           const presets = await GetQualityPresets();
-          if (presets && presets.length > 0) {
+          if (Array.isArray(presets) && presets.length > 0) {
             setQualityPresets(presets);
-            setSelectedQuality(presets[0].id);
           }
+        }
+        if (typeof GetSharingStatus === 'function') {
+          const sharing = await GetSharingStatus();
+          setStatus(sharing ? 'running' : 'stopped');
         }
 
         await syncClients();
+        await syncChat();
+        await syncScreenState();
       } catch (err) {
         console.error('Init error:', err);
       }
-    }
+    };
 
-    init();
+    initializeData();
+
+    const interval = setInterval(() => {
+      syncClients();
+      syncScreenState();
+    }, 2000);
 
     try {
       if (typeof EventsOn === 'function') {
-        EventsOn('clients_updated', (data: any) => {
-          updateClientStateFromData(data);
-        });
-
-        EventsOn('messages_updated', (newMessages: any) => {
-          if (Array.isArray(newMessages)) setMessages(newMessages);
-        });
-
-        EventsOn('server_state_changed', (state: any) => {
-          if (state && state.status) {
-            setStatus(state.status === 'running' ? 'running' : 'stopped');
-            if (state.port) setPort(state.port);
-            if (typeof state.screenActive === 'boolean') {
-              setIsScreenActive(state.screenActive);
-            }
-            if (typeof state.isPaused === 'boolean') {
-              setIsPaused(state.isPaused);
-            }
+        EventsOn('messages_updated', (msgs: ChatMessage[]) => {
+          if (Array.isArray(msgs)) {
+            setMessages(msgs);
           }
         });
+        EventsOn('clients_updated', (payload: any) => {
+          if (payload) {
+            setPendingRequests(payload.pending || []);
+            setConnectedViewers(payload.connected || []);
+          }
+        });
+        EventsOn('server_state_changed', (state: any) => {
+          if (state) {
+            if (state.status) setStatus(state.status);
+            if (typeof state.screenActive === 'boolean') setIsScreenActive(state.screenActive);
+            if (typeof state.isPaused === 'boolean') setIsPaused(state.isPaused);
+          }
+        });
+        EventsOn('client:requested', () => {
+          syncClients();
+          showNotification('New viewer connection request', 'info');
+        });
       }
-    } catch (err) {
-      console.log('EventsOn not available in standalone web mode');
+    } catch (e) {
+      console.log('EventsOn not registered:', e);
     }
 
-    const interval = setInterval(syncClients, 1000);
     return () => clearInterval(interval);
-  }, [syncClients, updateClientStateFromData]);
+  }, [syncClients, syncChat, syncScreenState]);
 
-  const shareUrl = `http://${selectedIp}:${port}`;
-
-  const handleStartSharing = async () => {
-    setStatus('starting');
+  const handleStartShare = async () => {
     try {
-      if (typeof StartSharing === 'function') {
-        await StartSharing(port);
+      if (typeof SetQualityPreset === 'function') {
+        await SetQualityPreset(selectedQuality);
       }
-      setStatus('running');
+      if (typeof StartSharing === 'function') {
+        await StartSharing(Number(selectedDisplayId) || 0);
+      }
       setIsScreenActive(true);
       setIsPaused(false);
-      await syncClients();
-      showNotification(`Live screen share active on ${shareUrl}`, 'success');
-    } catch (err: any) {
-      setStatus('error');
-      showNotification(`Failed to start sharing: ${err?.message || err}`, 'error');
+      showNotification('Screen sharing live at 30–60 FPS', 'success');
+    } catch (err) {
+      console.error('Start error:', err);
+      showNotification('Failed to start screen share', 'warning');
     }
   };
 
-  const handlePauseSharing = async () => {
+  const handlePauseShare = async () => {
     try {
       if (typeof PauseScreenShare === 'function') {
         await PauseScreenShare();
       }
       setIsPaused(true);
-      showNotification('Screen share paused — viewers now playing Memory Game!', 'info');
-    } catch (err: any) {
-      showNotification(`Error pausing sharing: ${err?.message || err}`, 'error');
+      showNotification('Screen stream paused', 'info');
+    } catch (err) {
+      console.error('Pause error:', err);
     }
   };
 
-  const handleResumeSharing = async () => {
+  const handleResumeShare = async () => {
     try {
       if (typeof ResumeScreenShare === 'function') {
         await ResumeScreenShare();
       }
       setIsPaused(false);
-      setIsScreenActive(true);
-      showNotification('Screen share resumed live for all viewers', 'success');
-    } catch (err: any) {
-      showNotification(`Error resuming sharing: ${err?.message || err}`, 'error');
+      showNotification('Screen stream resumed', 'success');
+    } catch (err) {
+      console.error('Resume error:', err);
     }
   };
 
-  const handleStopSharing = async () => {
+  const handleStopShare = async () => {
     try {
       if (typeof StopSharing === 'function') {
         await StopSharing();
       }
       setIsScreenActive(false);
       setIsPaused(false);
-      showNotification('Screen video stream stopped (chat & code sharing remains active)', 'info');
-    } catch (err: any) {
-      showNotification(`Error stopping sharing: ${err?.message || err}`, 'error');
+      showNotification('Screen stream stopped', 'info');
+    } catch (err) {
+      console.error('Stop error:', err);
     }
   };
 
-  const handleSelectQuality = async (presetId: string) => {
-    setSelectedQuality(presetId);
+  const handleSelectDisplay = async (id: string) => {
+    setSelectedDisplayId(id);
     try {
-      if (typeof SetQualityPreset === 'function') {
-        await SetQualityPreset(presetId);
-      }
-      const preset = qualityPresets.find((q) => q.id === presetId);
-      if (preset) {
-        showNotification(`Stream profile: ${preset.name}`, 'info');
+      if (typeof SelectDisplay === 'function') {
+        await SelectDisplay(id);
       }
     } catch (err) {
-      console.error('Quality preset error:', err);
+      console.error('Select display error:', err);
     }
   };
 
-  const handleSelectDisplay = (id: string) => {
-    setSelectedDisplay(id);
-    if (typeof SelectDisplay === 'function') {
-      SelectDisplay(id);
+  const handleSelectQuality = async (id: string) => {
+    setSelectedQuality(id);
+    try {
+      if (typeof SetQualityPreset === 'function') {
+        await SetQualityPreset(id);
+      }
+    } catch (err) {
+      console.error('Select quality error:', err);
     }
   };
 
@@ -337,23 +326,24 @@ export default function App() {
     }
   };
 
-  const handleSendMessage = async (message: string) => {
+  const handleSendMessage = async (text: string) => {
     try {
       if (typeof SendChatMessage === 'function') {
-        await SendChatMessage(message);
+        await SendChatMessage(text);
       }
-      showNotification('Message broadcasted to viewer sidebar', 'success');
+      await syncChat();
     } catch (err) {
       console.error('Send message error:', err);
     }
   };
 
-  const handleSendCodeSnippet = async (title: string, code: string, language: string) => {
+  const handleSendCode = async (code: string, lang: string, title?: string) => {
     try {
       if (typeof SendCodeSnippet === 'function') {
-        await SendCodeSnippet(title, code, language);
+        await SendCodeSnippet(title || 'Code Snippet', code, lang || 'javascript');
       }
-      showNotification(`Code snippet "${title}" sent to viewer sidebars`, 'success');
+      await syncChat();
+      showNotification('Code snippet broadcasted to all viewers', 'success');
     } catch (err) {
       console.error('Send code error:', err);
     }
@@ -372,109 +362,83 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col justify-between selection:bg-indigo-500/30">
-      {/* Header */}
-      <header className="px-6 py-4 border-b border-slate-800/80 bg-[#090d17]/80 backdrop-blur-xl sticky top-0 z-40 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <img
-            src={appLogo}
-            alt="ScreenLink Logo"
-            className="w-10 h-10 rounded-2xl shadow-glow-brand object-contain p-1 bg-[#090e1a] border border-cyan-500/30"
-          />
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-black tracking-tight text-white">ScreenLink</h1>
-              <span className="px-2 py-0.5 text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-full">
-                30–60 FPS HD
-              </span>
-            </div>
-            <p className="text-xs text-slate-400">Ultra-Fast Local Screen Mirroring & Code Broadcast</p>
-          </div>
-        </div>
+    <div className="h-screen flex flex-col bg-[#f8fafc] text-slate-800 font-sans antialiased overflow-hidden">
+      {/* Top Header */}
+      <Header status={status} viewerCount={connectedViewers.length} isPaused={isPaused} />
 
-        <div className="flex items-center gap-2.5">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/90 border border-slate-800 rounded-xl text-xs">
-            <span
-              className={`w-2 h-2 rounded-full ${
-                status === 'running'
-                  ? isPaused
-                    ? 'bg-amber-400'
-                    : 'bg-emerald-500 animate-pulse'
-                  : 'bg-slate-500'
-              }`}
+      {/* Main Content Layout (Full Width Grid without Left Sidebar) */}
+      <main className="flex-1 min-h-0 max-w-7xl w-full mx-auto p-6 overflow-hidden flex flex-col">
+        {/* Toast Notification */}
+        {notification && (
+          <div
+            className={`mb-4 px-4 py-2.5 rounded-xl text-xs font-semibold shadow-xs flex items-center justify-between transition-all duration-200 flex-shrink-0 ${
+              notification.type === 'success'
+                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                : notification.type === 'warning'
+                ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                : 'bg-indigo-50 text-indigo-800 border border-indigo-200'
+            }`}
+          >
+            <span>{notification.message}</span>
+            <button
+              onClick={() => setNotification(null)}
+              className="text-slate-400 hover:text-slate-600 ml-3 cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* 2-Column Dashboard & Live Broadcast Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full min-h-0 items-stretch flex-1 overflow-hidden">
+          {/* Left / Main Section (Col Span 7) */}
+          <div className="lg:col-span-7 flex flex-col gap-5 overflow-y-auto pr-1 h-full min-h-0">
+            {/* Share Link Card */}
+            <ShareUrlCard
+              shareUrl={shareUrl}
+              onShowQr={() => setIsQrModalOpen(true)}
             />
-            <span className="font-semibold text-slate-300 capitalize">
-              {status === 'running' ? (isPaused ? 'Screen Paused' : 'Server Online') : 'Offline'}
-            </span>
-          </div>
-        </div>
-      </header>
 
-      {/* Main Host Dashboard Grid */}
-      <main className="flex-1 p-6 max-w-7xl mx-auto w-full space-y-6">
-        {/* Row 1: Screen Controls & Share URL */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-7">
+            {/* Screen Capture Controls Card */}
             <ScreenControlCard
               status={status}
               isScreenActive={isScreenActive}
               isPaused={isPaused}
               displays={displays}
-              selectedDisplay={selectedDisplay}
-              onSelectDisplay={handleSelectDisplay}
+              selectedDisplayId={selectedDisplayId}
               qualityPresets={qualityPresets}
               selectedQuality={selectedQuality}
+              onStartShare={handleStartShare}
+              onStopShare={handleStopShare}
+              onPauseShare={handlePauseShare}
+              onResumeShare={handleResumeShare}
+              onSelectDisplay={handleSelectDisplay}
               onSelectQuality={handleSelectQuality}
-              onStartSharing={handleStartSharing}
-              onPauseSharing={handlePauseSharing}
-              onResumeSharing={handleResumeSharing}
-              onStopSharing={handleStopSharing}
+            />
+
+            {/* Unified Viewer Management Card */}
+            <ViewerManagementCard
+              pendingRequests={pendingRequests}
+              connectedViewers={connectedViewers}
+              onApprove={handleApproveRequest}
+              onReject={handleRejectRequest}
+              onApproveAll={handleApproveAll}
+              onDisconnect={handleDisconnectClient}
+              onDisconnectAll={handleDisconnectAll}
             />
           </div>
 
-          <div className="lg:col-span-5">
-            <ShareUrlCard
-              status={status}
-              url={shareUrl}
-              ipAddresses={ipAddresses}
-              selectedIp={selectedIp}
-              onSelectIp={setSelectedIp}
-              onShowQr={() => setIsQrModalOpen(true)}
+          {/* Right Section: Live Code & Announcements (Col Span 5) */}
+          <div className="lg:col-span-5 flex flex-col h-full min-h-0 overflow-hidden">
+            <AnnouncementCard
+              messages={messages}
+              onSendMessage={handleSendMessage}
+              onSendCode={handleSendCode}
+              onClearHistory={handleClearHistory}
             />
           </div>
-        </div>
-
-        {/* Row 2: Live Viewers Management */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <PendingRequestsCard
-            requests={pendingRequests}
-            onApprove={handleApproveRequest}
-            onReject={handleRejectRequest}
-            onApproveAll={handleApproveAll}
-          />
-          <ConnectedViewersCard
-            viewers={connectedViewers}
-            onDisconnect={handleDisconnectClient}
-            onDisconnectAll={handleDisconnectAll}
-          />
-        </div>
-
-        {/* Row 3: Live Code & Text Broadcaster */}
-        <div>
-          <AnnouncementCard
-            status={status}
-            messages={messages}
-            onSendMessage={handleSendMessage}
-            onSendCode={handleSendCodeSnippet}
-            onClearMessages={handleClearHistory}
-          />
         </div>
       </main>
-
-      {/* Footer */}
-      <footer className="px-6 py-4 border-t border-slate-900 bg-[#07090e] text-center text-xs text-slate-500">
-        ScreenLink • High-Framerate LAN Mirroring & Live Code Streaming
-      </footer>
 
       {/* QR Code Modal */}
       <QrCodeModal
@@ -484,4 +448,6 @@ export default function App() {
       />
     </div>
   );
-}
+};
+
+export default App;

@@ -4,34 +4,28 @@
 
 @layer base {
   body {
-    @apply bg-[#07090e] text-slate-100 font-sans antialiased overflow-y-auto selection:bg-indigo-500/30 selection:text-indigo-200;
-    background-image: 
-      radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.08) 0px, transparent 50%),
-      radial-gradient(at 100% 0%, rgba(6, 182, 212, 0.06) 0px, transparent 50%),
-      radial-gradient(at 50% 100%, rgba(16, 185, 129, 0.04) 0px, transparent 50%);
-    background-attachment: fixed;
+    @apply bg-[#f8fafc] text-slate-800 font-sans antialiased overflow-y-auto selection:bg-indigo-500/20 selection:text-indigo-700;
   }
 }
 
-.glass-panel {
-  background: rgba(15, 20, 34, 0.75);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(30, 41, 59, 0.8);
+.card-base {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
 }
 
-.glass-panel-interactive {
-  background: rgba(15, 20, 34, 0.75);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(30, 41, 59, 0.8);
+.card-interactive {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.glass-panel-interactive:hover {
-  border-color: rgba(99, 102, 241, 0.4);
-  background: rgba(22, 29, 48, 0.85);
-  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+.card-interactive:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
 }
 
 /* Custom scrollbars */
@@ -45,10 +39,10 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
+  background: #cbd5e1;
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: #94a3b8;
 }
