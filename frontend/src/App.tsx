@@ -56,6 +56,7 @@ export const App: React.FC = () => {
   const [isScreenActive, setIsScreenActive] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [shareUrl, setShareUrl] = useState('http://127.0.0.1:8080');
+  const [availableUrls, setAvailableUrls] = useState<string[]>(['http://127.0.0.1:8080']);
   const [displays, setDisplays] = useState<DisplayInfo[]>([]);
   const [selectedDisplayId, setSelectedDisplayId] = useState<string>('0');
   const [qualityPresets, setQualityPresets] = useState<QualityPreset[]>(DEFAULT_PRESETS);
@@ -119,7 +120,19 @@ export const App: React.FC = () => {
         const sysInfo = await GetSystemInfo();
         if (sysInfo && Array.isArray(sysInfo.ipAddresses) && sysInfo.ipAddresses.length > 0) {
           const port = sysInfo.defaultPort || 8080;
-          setShareUrl(`http://${sysInfo.ipAddresses[0]}:${port}`);
+          const urls = sysInfo.ipAddresses.map((ip: string) => `http://${ip}:${port}`);
+          
+          // Ensure 127.0.0.1 is included
+          const hasLocalhost = urls.some((u: string) => u.includes('127.0.0.1') || u.includes('localhost'));
+          if (!hasLocalhost) {
+            urls.push(`http://127.0.0.1:${port}`);
+          }
+
+          setAvailableUrls(urls);
+          setShareUrl((prev) => {
+            if (urls.includes(prev)) return prev;
+            return urls[0];
+          });
         }
       }
     } catch (err) {
@@ -409,7 +422,12 @@ export const App: React.FC = () => {
             {/* Share Link Card */}
             <ShareUrlCard
               shareUrl={shareUrl}
-              onShowQr={() => setIsQrModalOpen(true)}
+              availableUrls={availableUrls}
+              onSelectShareUrl={setShareUrl}
+              onShowQr={(customUrl) => {
+                if (customUrl) setShareUrl(customUrl);
+                setIsQrModalOpen(true);
+              }}
             />
 
             {/* Screen Capture Controls Card */}
@@ -458,6 +476,8 @@ export const App: React.FC = () => {
         isOpen={isQrModalOpen}
         onClose={() => setIsQrModalOpen(false)}
         url={shareUrl}
+        availableUrls={availableUrls}
+        onSelectUrl={setShareUrl}
       />
     </div>
   );

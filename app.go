@@ -196,6 +196,18 @@ func (a *App) GetSystemInfo() SystemInfo {
 		ips = []string{"127.0.0.1"}
 	}
 
+	// Ensure 127.0.0.1 is included at the end so localhost is always an available link option
+	hasLoopback := false
+	for _, ip := range ips {
+		if ip == "127.0.0.1" {
+			hasLoopback = true
+			break
+		}
+	}
+	if !hasLoopback {
+		ips = append(ips, "127.0.0.1")
+	}
+
 	port := a.currentPort
 	if port <= 0 {
 		port = 8080
