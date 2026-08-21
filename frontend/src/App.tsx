@@ -113,16 +113,24 @@ export const App: React.FC = () => {
     }
   }, []);
 
+  const syncSystemInfo = useCallback(async () => {
+    try {
+      if (typeof GetSystemInfo === 'function') {
+        const sysInfo = await GetSystemInfo();
+        if (sysInfo && Array.isArray(sysInfo.ipAddresses) && sysInfo.ipAddresses.length > 0) {
+          const port = sysInfo.defaultPort || 8080;
+          setShareUrl(`http://${sysInfo.ipAddresses[0]}:${port}`);
+        }
+      }
+    } catch (err) {
+      console.error('Error syncing system info:', err);
+    }
+  }, []);
+
   useEffect(() => {
     const initializeData = async () => {
       try {
-        if (typeof GetSystemInfo === 'function') {
-          const sysInfo = await GetSystemInfo();
-          if (sysInfo && Array.isArray(sysInfo.ipAddresses) && sysInfo.ipAddresses.length > 0) {
-            const port = sysInfo.defaultPort || 8080;
-            setShareUrl(`http://${sysInfo.ipAddresses[0]}:${port}`);
-          }
-        }
+        await syncSystemInfo();
         if (typeof GetDisplays === 'function') {
           const dispList = await GetDisplays();
           if (Array.isArray(dispList) && dispList.length > 0) {
@@ -156,6 +164,7 @@ export const App: React.FC = () => {
     const interval = setInterval(() => {
       syncClients();
       syncScreenState();
+      syncSystemInfo();
     }, 2000);
 
     try {

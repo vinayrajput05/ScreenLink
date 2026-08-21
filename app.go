@@ -196,9 +196,14 @@ func (a *App) GetSystemInfo() SystemInfo {
 		ips = []string{"127.0.0.1"}
 	}
 
+	port := a.currentPort
+	if port <= 0 {
+		port = 8080
+	}
+
 	return SystemInfo{
 		IPAddresses: ips,
-		DefaultPort: 8080,
+		DefaultPort: port,
 		Version:     "1.0.0",
 	}
 }
