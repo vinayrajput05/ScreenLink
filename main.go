@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"runtime"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -17,6 +18,11 @@ func main() {
 	setDockIcon()
 	app := NewApp()
 
+	windowStartState := options.Normal
+	if runtime.GOOS == "windows" {
+		windowStartState = options.Maximised
+	}
+
 	err := wails.Run(&options.App{
 		Title:             "ScreenLink — By https://vinayrajput.in",
 		Width:             1140,
@@ -28,6 +34,7 @@ func main() {
 		Frameless:         false,
 		StartHidden:       false,
 		HideWindowOnClose: false,
+		WindowStartState:  windowStartState,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
