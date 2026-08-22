@@ -10,6 +10,18 @@ Built with **Go, Wails v2, React 19, TypeScript, Tailwind CSS, and WebSockets**.
 
 ---
 
+## 📥 Download
+
+Get the latest stable version of ScreenLink for **macOS and Windows**.
+
+<a href="https://github.com/vinayrajput05/ScreenLink/releases/latest">
+  <img src="https://img.shields.io/badge/Download-Latest%20Release-2ea44f?style=for-the-badge&logo=github" alt="Download ScreenLink">
+</a>
+
+👉 **[View All Releases](https://github.com/vinayrajput05/ScreenLink/releases)**
+
+---
+
 ## ✨ Features
 
 * 🌐 **Zero-Install Viewer** — Open the host URL in any modern browser.
@@ -137,6 +149,7 @@ http://192.168.1.10:8080
 
 ```bash
 export PATH=$PATH:/opt/homebrew/bin:$HOME/go/bin
+
 wails build
 ```
 
@@ -228,9 +241,9 @@ If you like the project:
 
 ### ☕ Support the Developer
 
-If ScreenLink is useful to you and you'd like to support its development, you can contribute here:
+If ScreenLink is useful to you and you'd like to support its development:
 
-**❤️ [Support Me](https://razorpay.me/@vinayrajput05)** 
+**❤️ [Support Me](https://razorpay.me/@vinayrajput05)**
 
 <a href="https://razorpay.me/@vinayrajput05">
   <img src="./payment_qr.png" width="160" alt="Support ScreenLink via Razorpay">
