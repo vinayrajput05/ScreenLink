@@ -33,6 +33,18 @@ Get the latest stable version of ScreenLink for **macOS and Windows**.
 
 ---
 
+## 📸 Screenshots
+
+| 🖥️ Main Dashboard | 🔐 Viewer Permission Request |
+| :---: | :---: |
+| ![ScreenLink Main Dashboard](./Screenshot/Screenshot-1.png) | ![Viewer Permission Request](./Screenshot/Screenshot-2.png) |
+
+| 👥 Connected Viewers | ⚡ Live Screen Streaming |
+| :---: | :---: |
+| ![Connected Viewers Management](./Screenshot/Screenshot-3.png) | ![Live Screen Streaming](./Screenshot/Screenshot-4.png) |
+
+---
+
 ## 🚀 How It Works
 
 ```text
