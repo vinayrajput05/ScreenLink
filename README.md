@@ -149,25 +149,31 @@ http://192.168.1.10:8080
 
 ```bash
 export PATH=$PATH:/opt/homebrew/bin:$HOME/go/bin
-
-wails build
+wails build -platform darwin/arm64
 ```
 
-Output:
-
+**Output:**
 ```text
 build/bin/ScreenLink.app
 ```
 
-Create a DMG:
-
+**Create a Drag & Drop macOS DMG Installer:**
 ```bash
-hdiutil create \
--volname "ScreenLink" \
--srcfolder build/bin/ScreenLink.app \
--ov \
--format UDZO \
-build/bin/ScreenLink-Installer.dmg
+./scripts/build-dmg.sh
+```
+Or using `create-dmg`:
+```bash
+create-dmg \
+  --volname "ScreenLink Installer" \
+  --window-pos 200 120 \
+  --window-size 600 360 \
+  --icon-size 100 \
+  --icon "ScreenLink.app" 150 170 \
+  --hide-extension "ScreenLink.app" \
+  --app-drop-link 450 170 \
+  --no-internet-enable \
+  build/bin/ScreenLink-Installer.dmg \
+  build/bin/ScreenLink.app
 ```
 
 ### 🪟 Windows
