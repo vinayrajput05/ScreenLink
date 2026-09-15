@@ -658,6 +658,8 @@
   <script>
     let socket = null;
     let isStreamPaused = false;
+    let currentStreamState = 'stopped';
+    let lastFrameReceivedAt = Date.now();
     let clientId = localStorage.getItem('screenlink_client_id');
     if (!clientId) {
       clientId = (typeof crypto.randomUUID === 'function') ? crypto.randomUUID() : 'client-' + Math.random().toString(36).substring(2, 11);
@@ -683,6 +685,19 @@
     if (ctx) {
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
+    }
+    if (canvas) {
+      canvas.addEventListener('contextlost', (e) => {
+        e.preventDefault();
+        console.warn('[Viewer] Canvas context lost');
+      });
+      canvas.addEventListener('contextrestored', () => {
+        console.info('[Viewer] Canvas context restored');
+        if (ctx) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+        }
+      });
     }
     const placeholder = document.getElementById('screen-placeholder');
     const gameWrap = document.getElementById('memory-game-wrap');
@@ -748,6 +763,18 @@
             if (bar) {
               if (i <= bars) bar.classList.add('active');
               else bar.classList.remove('active');
+            }
+          }
+        }
+
+        // Stale connection watchdog: if sharing is active, not paused, and no frame arrived in > 8s
+        if (!isStreamPaused && !isIntentionalClose && currentStreamState === 'active') {
+          if (Date.now() - lastFrameReceivedAt > 8000) {
+            console.warn('[Viewer] No frame received for 8s while stream active; testing connection');
+            if (socket && socket.readyState === WebSocket.OPEN) {
+              socket.send(JSON.stringify({ type: 'ping', t: Date.now() }));
+            } else if (!socket || socket.readyState === WebSocket.CLOSED) {
+              scheduleReconnect(localStorage.getItem('screenlink_display_name') || 'Viewer');
             }
           }
         }
@@ -930,11 +957,13 @@
           } else if (data.type === 'status') {
             handleStatusChange(data.state);
           } else if (data.type === 'stream_state') {
+            currentStreamState = data.state;
             if (data.state === 'paused') {
               setStreamPauseState(true, 'paused');
             } else if (data.state === 'stopped') {
               setStreamPauseState(true, 'stopped');
             } else if (data.state === 'active') {
+              lastFrameReceivedAt = Date.now();
               setStreamPauseState(false);
             }
           } else if (data.type === 'chat_message' || data.type === 'code' || data.type === 'announcement') {
@@ -1106,10 +1135,13 @@
     }
 
     let isDecodingFrame = false;
+    let decodeStartTime = 0;
     let pendingFrameBuffer = null;
 
     function handleBinaryFrame(buffer) {
       if (buffer.byteLength < 13) return;
+
+      lastFrameReceivedAt = Date.now();
 
       // Track incoming network bytes and frame count
       bytesReceivedWindow += buffer.byteLength;
@@ -1117,10 +1149,16 @@
 
       if (isStreamPaused) return;
 
-      // If already decoding a frame, hold the latest buffer to render next, dropping intermediate stale frames
+      // Watchdog: If previous frame decode took > 1000ms (browser hung/stalled), force reset
       if (isDecodingFrame) {
-        pendingFrameBuffer = buffer;
-        return;
+        if (Date.now() - decodeStartTime > 1000) {
+          console.warn('[Viewer] Frame decode watchdog triggered; resetting decoder');
+          isDecodingFrame = false;
+          pendingFrameBuffer = null;
+        } else {
+          pendingFrameBuffer = buffer;
+          return;
+        }
       }
 
       renderFrameBuffer(buffer);
@@ -1139,6 +1177,8 @@
 
       if (typeof createImageBitmap === 'function') {
         isDecodingFrame = true;
+        decodeStartTime = Date.now();
+
         createImageBitmap(blob, { imageOrientation: 'none', premultiplyAlpha: 'none' }).then(bitmap => {
           if (canvas.width !== width || canvas.height !== height) {
             canvas.width = width;
@@ -1161,7 +1201,7 @@
           if (pendingFrameBuffer) {
             const nextBuf = pendingFrameBuffer;
             pendingFrameBuffer = null;
-            renderFrameBuffer(nextBuf);
+            requestAnimationFrame(() => renderFrameBuffer(nextBuf));
           }
         }).catch(err => {
           isDecodingFrame = false;
@@ -1173,8 +1213,24 @@
     }
 
     function fallbackRenderBlob(blob, width, height) {
+      isDecodingFrame = true;
+      decodeStartTime = Date.now();
       const url = URL.createObjectURL(blob);
       const img = new Image();
+
+      const finish = () => {
+        URL.revokeObjectURL(url);
+        img.onload = null;
+        img.onerror = null;
+        img.onabort = null;
+        isDecodingFrame = false;
+        if (pendingFrameBuffer) {
+          const nextBuf = pendingFrameBuffer;
+          pendingFrameBuffer = null;
+          requestAnimationFrame(() => renderFrameBuffer(nextBuf));
+        }
+      };
+
       img.onload = () => {
         if (canvas.width !== width || canvas.height !== height) {
           canvas.width = width;
@@ -1183,7 +1239,6 @@
           if (statusEl) statusEl.textContent = `${width}×${height} • HD Live`;
         }
         ctx.drawImage(img, 0, 0);
-        URL.revokeObjectURL(url);
         if (placeholder && !placeholder.classList.contains('hidden')) {
           placeholder.classList.add('hidden');
         }
@@ -1191,15 +1246,28 @@
           gameWrap.classList.add('hidden');
         }
         canvas.classList.remove('hidden');
-
-        if (pendingFrameBuffer) {
-          const nextBuf = pendingFrameBuffer;
-          pendingFrameBuffer = null;
-          renderFrameBuffer(nextBuf);
-        }
+        finish();
       };
+
+      img.onerror = img.onabort = () => {
+        finish();
+      };
+
       img.src = url;
     }
+
+    // Auto-recover from background / screen sleep tab throttling
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        isDecodingFrame = false;
+        pendingFrameBuffer = null;
+        lastFrameReceivedAt = Date.now();
+        if (!isIntentionalClose && (!socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING)) {
+          const savedName = localStorage.getItem('screenlink_display_name') || 'Viewer';
+          scheduleReconnect(savedName);
+        }
+      }
+    });
 
     function handleStatusChange(state) {
       switch (state) {

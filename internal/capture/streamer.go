@@ -221,6 +221,13 @@ func (s *Streamer) Stop() {
 
 // fastDownscaleRGBA rapidly resizes an RGBA image using direct memory mapping
 func fastDownscaleRGBA(src *image.RGBA, dst *image.RGBA) {
+	if src == nil || dst == nil {
+		return
+	}
+	defer func() {
+		_ = recover()
+	}()
+
 	srcBounds := src.Bounds()
 	dstBounds := dst.Bounds()
 
@@ -254,7 +261,7 @@ func fastDownscaleRGBA(src *image.RGBA, dst *image.RGBA) {
 			sOff := srcRowOffset + sx4
 			dOff := dstRowOffset + dx*4
 
-			if sOff+3 < len(srcPix) && dOff+3 < len(dstPix) {
+			if sOff >= 0 && sOff+3 < len(srcPix) && dOff >= 0 && dOff+3 < len(dstPix) {
 				dstPix[dOff] = srcPix[sOff]
 				dstPix[dOff+1] = srcPix[sOff+1]
 				dstPix[dOff+2] = srcPix[sOff+2]
@@ -298,59 +305,66 @@ func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 					continue
 				}
 
-				s.mu.Lock()
-				quality := s.jpegQuality
-				maxH := s.maxHeight
-				broadcaster := s.broadcaster
-				paused := s.isPaused
-				s.mu.Unlock()
+				// Safe per-frame execution: transient panic on a single frame will not terminate encoder
+				func() {
+					defer func() {
+						_ = recover()
+					}()
 
-				if paused || broadcaster == nil || !broadcaster.HasApprovedViewers() {
-					continue
-				}
+					s.mu.Lock()
+					quality := s.jpegQuality
+					maxH := s.maxHeight
+					broadcaster := s.broadcaster
+					paused := s.isPaused
+					s.mu.Unlock()
 
-				imgToEncode := frame.img
-				finalW := frame.width
-				finalH := frame.height
-
-				// Downscale if higher than max configured resolution (e.g. 1080p limit)
-				if maxH > 0 && frame.height > maxH {
-					targetH := maxH
-					targetW := (frame.width * targetH) / frame.height
-					if targetW%2 != 0 {
-						targetW--
+					if paused || broadcaster == nil || !broadcaster.HasApprovedViewers() {
+						return
 					}
 
-					if resizedBuf == nil || lastTargetW != targetW || lastTargetH != targetH {
-						resizedBuf = image.NewRGBA(image.Rect(0, 0, targetW, targetH))
-						lastTargetW = targetW
-						lastTargetH = targetH
+					imgToEncode := frame.img
+					finalW := frame.width
+					finalH := frame.height
+
+					// Downscale if higher than max configured resolution (e.g. 1080p limit)
+					if maxH > 0 && frame.height > maxH {
+						targetH := maxH
+						targetW := (frame.width * targetH) / frame.height
+						if targetW%2 != 0 {
+							targetW--
+						}
+
+						if resizedBuf == nil || lastTargetW != targetW || lastTargetH != targetH {
+							resizedBuf = image.NewRGBA(image.Rect(0, 0, targetW, targetH))
+							lastTargetW = targetW
+							lastTargetH = targetH
+						}
+
+						if rgba, ok := frame.img.(*image.RGBA); ok {
+							fastDownscaleRGBA(rgba, resizedBuf)
+							imgToEncode = resizedBuf
+							finalW = targetW
+							finalH = targetH
+						}
 					}
 
-					if rgba, ok := frame.img.(*image.RGBA); ok {
-						fastDownscaleRGBA(rgba, resizedBuf)
-						imgToEncode = resizedBuf
-						finalW = targetW
-						finalH = targetH
+					rawJpegBuf.Reset()
+					err := jpeg.Encode(rawJpegBuf, imgToEncode, &jpeg.Options{Quality: quality})
+					if err != nil {
+						return
 					}
-				}
+					jpegBytes := rawJpegBuf.Bytes()
 
-				rawJpegBuf.Reset()
-				err := jpeg.Encode(rawJpegBuf, imgToEncode, &jpeg.Options{Quality: quality})
-				if err != nil {
-					continue
-				}
-				jpegBytes := rawJpegBuf.Bytes()
+					buf.Reset()
+					fid := atomic.AddUint64(&s.frameID, 1)
+					_ = buf.WriteByte(0x11)
+					_ = binary.Write(buf, binary.BigEndian, fid)
+					_ = binary.Write(buf, binary.BigEndian, uint16(finalW))
+					_ = binary.Write(buf, binary.BigEndian, uint16(finalH))
+					_, _ = buf.Write(jpegBytes)
 
-				buf.Reset()
-				fid := atomic.AddUint64(&s.frameID, 1)
-				_ = buf.WriteByte(0x11)
-				_ = binary.Write(buf, binary.BigEndian, fid)
-				_ = binary.Write(buf, binary.BigEndian, uint16(finalW))
-				_ = binary.Write(buf, binary.BigEndian, uint16(finalH))
-				_, _ = buf.Write(jpegBytes)
-
-				broadcaster.BroadcastFrame(buf.Bytes())
+					broadcaster.BroadcastFrame(buf.Bytes())
+				}()
 			}
 		}
 	}()
@@ -365,80 +379,87 @@ func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
-			s.mu.Lock()
-			fps := s.targetFPS
-			idx := s.displayIndex
-			broadcaster := s.broadcaster
-			paused := s.isPaused
-			s.mu.Unlock()
+			// Safe per-iteration execution: transient capture failure or display sleep will not kill loop
+			func() {
+				defer func() {
+					_ = recover()
+				}()
 
-			if paused {
-				time.Sleep(60 * time.Millisecond)
-				continue
-			}
+				s.mu.Lock()
+				fps := s.targetFPS
+				idx := s.displayIndex
+				broadcaster := s.broadcaster
+				paused := s.isPaused
+				s.mu.Unlock()
 
-			if fps < 30 {
-				fps = 30
-			}
+				if paused {
+					time.Sleep(60 * time.Millisecond)
+					return
+				}
 
-			hasViewers := (broadcaster != nil && broadcaster.HasApprovedViewers())
-			if !hasViewers {
-				time.Sleep(50 * time.Millisecond)
-				continue
-			}
+				if fps < 30 {
+					fps = 30
+				}
 
-			frameStart := time.Now()
+				hasViewers := (broadcaster != nil && broadcaster.HasApprovedViewers())
+				if !hasViewers {
+					time.Sleep(50 * time.Millisecond)
+					return
+				}
 
-			num := screenshot.NumActiveDisplays()
-			if num <= 0 {
-				time.Sleep(80 * time.Millisecond)
-				continue
-			}
+				frameStart := time.Now()
 
-			if idx < 0 || idx >= num {
-				idx = 0
-			}
+				num := screenshot.NumActiveDisplays()
+				if num <= 0 {
+					time.Sleep(80 * time.Millisecond)
+					return
+				}
 
-			bounds := screenshot.GetDisplayBounds(idx)
-			if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
-				time.Sleep(50 * time.Millisecond)
-				continue
-			}
+				if idx < 0 || idx >= num {
+					idx = 0
+				}
 
-			img, err := screenshot.CaptureRect(bounds)
-			if err != nil || img == nil {
-				time.Sleep(15 * time.Millisecond)
-				continue
-			}
+				bounds := screenshot.GetDisplayBounds(idx)
+				if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
+					time.Sleep(50 * time.Millisecond)
+					return
+				}
 
-			// Render mouse cursor if on current display
-			if curX, curY, ok := getCursorPos(); ok {
-				if curX >= bounds.Min.X && curX < bounds.Max.X &&
-					curY >= bounds.Min.Y && curY < bounds.Max.Y {
-					imgW := img.Bounds().Dx()
-					imgH := img.Bounds().Dy()
-					boundW := bounds.Dx()
-					boundH := bounds.Dy()
-					if boundW > 0 && boundH > 0 && imgW > 0 && imgH > 0 {
-						relX := (curX - bounds.Min.X) * imgW / boundW
-						relY := (curY - bounds.Min.Y) * imgH / boundH
-						DrawCursor(img, relX, relY)
+				img, err := screenshot.CaptureRect(bounds)
+				if err != nil || img == nil {
+					time.Sleep(25 * time.Millisecond)
+					return
+				}
+
+				// Render mouse cursor if on current display
+				if curX, curY, ok := getCursorPos(); ok {
+					if curX >= bounds.Min.X && curX < bounds.Max.X &&
+						curY >= bounds.Min.Y && curY < bounds.Max.Y {
+						imgW := img.Bounds().Dx()
+						imgH := img.Bounds().Dy()
+						boundW := bounds.Dx()
+						boundH := bounds.Dy()
+						if boundW > 0 && boundH > 0 && imgW > 0 && imgH > 0 {
+							relX := (curX - bounds.Min.X) * imgW / boundW
+							relY := (curY - bounds.Min.Y) * imgH / boundH
+							DrawCursor(img, relX, relY)
+						}
 					}
 				}
-			}
 
-			// Non-blocking handoff to encoder worker (drops stale frames immediately if encoder is busy)
-			select {
-			case frameChan <- rawFrame{img: img, width: bounds.Dx(), height: bounds.Dy()}:
-			default:
-			}
+				// Non-blocking handoff to encoder worker (drops stale frames immediately if encoder is busy)
+				select {
+				case frameChan <- rawFrame{img: img, width: bounds.Dx(), height: bounds.Dy()}:
+				default:
+				}
 
-			// Exact framerate pacing
-			targetInterval := time.Duration(1000/fps) * time.Millisecond
-			elapsed := time.Since(frameStart)
-			if elapsed < targetInterval {
-				time.Sleep(targetInterval - elapsed)
-			}
+				// Exact framerate pacing
+				targetInterval := time.Duration(1000/fps) * time.Millisecond
+				elapsed := time.Since(frameStart)
+				if elapsed < targetInterval {
+					time.Sleep(targetInterval - elapsed)
+				}
+			}()
 		}
 	}
 }
