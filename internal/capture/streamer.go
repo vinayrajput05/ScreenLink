@@ -363,7 +363,12 @@ func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 					_ = binary.Write(buf, binary.BigEndian, uint16(finalH))
 					_, _ = buf.Write(jpegBytes)
 
-					broadcaster.BroadcastFrame(buf.Bytes())
+					// Allocate an independent slice copy so asynchronous network write pumps
+					// do not data-race with buf.Reset() on subsequent frames
+					framePayload := make([]byte, buf.Len())
+					copy(framePayload, buf.Bytes())
+
+					broadcaster.BroadcastFrame(framePayload)
 				}()
 			}
 		}

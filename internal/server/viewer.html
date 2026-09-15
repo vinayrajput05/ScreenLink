@@ -767,15 +767,15 @@
           }
         }
 
-        // Stale connection watchdog: if sharing is active, not paused, and no frame arrived in > 8s
+        // Stale connection watchdog: if sharing is active, not paused, and no frame arrived in > 5s
         if (!isStreamPaused && !isIntentionalClose && currentStreamState === 'active') {
-          if (Date.now() - lastFrameReceivedAt > 8000) {
-            console.warn('[Viewer] No frame received for 8s while stream active; testing connection');
-            if (socket && socket.readyState === WebSocket.OPEN) {
-              socket.send(JSON.stringify({ type: 'ping', t: Date.now() }));
-            } else if (!socket || socket.readyState === WebSocket.CLOSED) {
-              scheduleReconnect(localStorage.getItem('screenlink_display_name') || 'Viewer');
+          if (Date.now() - lastFrameReceivedAt > 5000) {
+            console.warn('[Viewer] No frame received for 5s while stream active; forcing reconnect');
+            lastFrameReceivedAt = Date.now();
+            if (socket) {
+              try { socket.close(); } catch(e) {}
             }
+            scheduleReconnect(localStorage.getItem('screenlink_display_name') || 'Viewer');
           }
         }
       }, 1000);
@@ -1201,7 +1201,7 @@
           if (pendingFrameBuffer) {
             const nextBuf = pendingFrameBuffer;
             pendingFrameBuffer = null;
-            requestAnimationFrame(() => renderFrameBuffer(nextBuf));
+            setTimeout(() => renderFrameBuffer(nextBuf), 0);
           }
         }).catch(err => {
           isDecodingFrame = false;
@@ -1227,7 +1227,7 @@
         if (pendingFrameBuffer) {
           const nextBuf = pendingFrameBuffer;
           pendingFrameBuffer = null;
-          requestAnimationFrame(() => renderFrameBuffer(nextBuf));
+          setTimeout(() => renderFrameBuffer(nextBuf), 0);
         }
       };
 

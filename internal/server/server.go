@@ -624,6 +624,10 @@ func (s *Server) handleClientDisconnected(clientID string) {
 	s.clientsMu.Lock()
 	if c, ok := s.clients[clientID]; ok {
 		c.StopWritePump()
+		if c.Conn != nil {
+			_ = c.Conn.Close()
+			c.Conn = nil
+		}
 		c.State = clients.ClientDisconnected
 	}
 	s.clientsMu.Unlock()
