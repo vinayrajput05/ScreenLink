@@ -231,3 +231,72 @@ func TestServerWebSocketReconnectFlow(t *testing.T) {
 		t.Errorf("Expected approved on reconnect (same client ID), got %s", resp2.State)
 	}
 }
+
+func TestBroadcastFrameNonBlockingWithSlowClient(t *testing.T) {
+	dummyHTML := []byte("<!DOCTYPE html><html><body>LANMirror Viewer</body></html>")
+	cb := &mockCallback{}
+	srv := NewServer(8092, dummyHTML, cb)
+
+	err := srv.Start()
+	if err != nil {
+		t.Fatalf("Failed to start server: %v", err)
+	}
+	defer srv.Stop()
+
+	time.Sleep(100 * time.Millisecond)
+
+	wsURL := "ws://127.0.0.1:8092/ws"
+
+	// Connect Client 1 (Fast client)
+	wsFast, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("Failed to connect fast websocket: %v", err)
+	}
+	defer wsFast.Close()
+
+	reqFast := WsMessage{Type: "connection_request", ClientID: "fast-client-1", DisplayName: "Fast Viewer"}
+	bFast, _ := json.Marshal(reqFast)
+	_ = wsFast.WriteMessage(websocket.TextMessage, bFast)
+	_, _, _ = wsFast.ReadMessage() // read pending
+
+	// Connect Client 2 (Slow/unresponsive client that never reads binary frames)
+	wsSlow, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("Failed to connect slow websocket: %v", err)
+	}
+	defer wsSlow.Close()
+
+	reqSlow := WsMessage{Type: "connection_request", ClientID: "slow-client-2", DisplayName: "Slow Viewer"}
+	bSlow, _ := json.Marshal(reqSlow)
+	_ = wsSlow.WriteMessage(websocket.TextMessage, bSlow)
+	_, _, _ = wsSlow.ReadMessage() // read pending
+
+	// Approve both
+	srv.ApproveClient("fast-client-1")
+	srv.ApproveClient("slow-client-2")
+	_, _, _ = wsFast.ReadMessage() // read approved
+	_, _, _ = wsSlow.ReadMessage() // read approved
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Simulate high-frequency frame broadcasting (e.g. 30 frames)
+	dummyFrame := []byte{0x11, 0, 0, 0, 0, 0, 0, 0, 1, 0, 100, 0, 100, 0xFF, 0xD8, 0xFF}
+
+	start := time.Now()
+	for i := 0; i < 30; i++ {
+		srv.BroadcastFrame(dummyFrame)
+	}
+	broadcastDuration := time.Since(start)
+
+	// In the old implementation with blocking SafeSend, this would block for seconds per frame.
+	// With the new non-blocking queue, 30 broadcasts must finish in under 100ms!
+	if broadcastDuration > 100*time.Millisecond {
+		t.Errorf("BroadcastFrame took too long: %v (expected < 100ms)", broadcastDuration)
+	}
+
+	// Verify the server has approved viewers
+	if !srv.HasApprovedViewers() {
+		t.Errorf("Expected server to have approved viewers")
+	}
+}
+
