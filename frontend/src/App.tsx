@@ -46,9 +46,10 @@ import {
 import { EventsOn } from '../wailsjs/runtime/runtime';
 
 const DEFAULT_PRESETS: QualityPreset[] = [
-  { id: '30fps', name: '30 FPS (Smooth 1080p)', description: 'Minimum 30 FPS • Recommended', maxHeight: 1080, quality: 82, targetFps: 30 },
-  { id: '60fps', name: '60 FPS (Pro Motion)', description: '60 FPS Ultra • Zero Stutter', maxHeight: 1080, quality: 78, targetFps: 60 },
-  { id: '45fps', name: '45 FPS (High Action)', description: '45 FPS • High Motion Fluidity', maxHeight: 1080, quality: 80, targetFps: 45 },
+  { id: '30fps', name: '1080p Full HD (30 FPS)', description: 'Recommended • Razor-Sharp Text Clarity', maxHeight: 1080, quality: 85, targetFps: 30 },
+  { id: '45fps', name: '1080p High Motion (45 FPS)', description: '45 FPS Fluid • Balanced Clarity', maxHeight: 1080, quality: 82, targetFps: 45 },
+  { id: '60fps', name: '1080p Pro Motion (60 FPS)', description: '60 FPS Pro • Zero Stutter', maxHeight: 1080, quality: 80, targetFps: 60 },
+  { id: 'clarity_30', name: '1080p Ultra Text (30 FPS)', description: 'Maximum 1080p Sharpness (Quality 90)', maxHeight: 1080, quality: 90, targetFps: 30 },
 ];
 
 export const App: React.FC = () => {

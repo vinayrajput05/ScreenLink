@@ -55,7 +55,7 @@ func NewStreamer(broadcaster FrameBroadcaster) *Streamer {
 	s := &Streamer{
 		displayIndex:   0,
 		targetFPS:      30,
-		jpegQuality:    72,
+		jpegQuality:    85,
 		maxHeight:      1080,
 		selectedPreset: "30fps",
 		broadcaster:    broadcaster,
@@ -74,27 +74,35 @@ func GetAvailableQualityPresets() []QualityPreset {
 	return []QualityPreset{
 		{
 			ID:          "30fps",
-			Name:        "30 FPS (Smooth 1080p)",
-			Description: "Minimum 30 FPS • Ultra-Low Latency",
+			Name:        "1080p Full HD (30 FPS)",
+			Description: "Recommended • Razor-Sharp Text Clarity",
 			MaxHeight:   1080,
-			Quality:     72,
+			Quality:     85,
 			TargetFPS:   30,
 		},
 		{
 			ID:          "45fps",
-			Name:        "45 FPS (High Framerate)",
-			Description: "45 FPS High Motion • Balanced",
+			Name:        "1080p High Motion (45 FPS)",
+			Description: "45 FPS Fluid • Balanced Clarity",
 			MaxHeight:   1080,
-			Quality:     70,
+			Quality:     82,
 			TargetFPS:   45,
 		},
 		{
 			ID:          "60fps",
-			Name:        "60 FPS (Pro Motion)",
+			Name:        "1080p Pro Motion (60 FPS)",
 			Description: "60 FPS Pro • Zero Stutter",
 			MaxHeight:   1080,
-			Quality:     68,
+			Quality:     80,
 			TargetFPS:   60,
+		},
+		{
+			ID:          "clarity_30",
+			Name:        "1080p Ultra Text (30 FPS)",
+			Description: "Maximum 1080p Sharpness (Quality 90)",
+			MaxHeight:   1080,
+			Quality:     90,
+			TargetFPS:   30,
 		},
 	}
 }
@@ -151,19 +159,19 @@ func (s *Streamer) SetQualityPreset(presetID string) {
 	switch presetID {
 	case "60fps":
 		s.targetFPS = 60
-		s.jpegQuality = 68
+		s.jpegQuality = 80
 		s.maxHeight = 1080
 	case "45fps":
 		s.targetFPS = 45
-		s.jpegQuality = 70
+		s.jpegQuality = 82
 		s.maxHeight = 1080
 	case "clarity_30":
 		s.targetFPS = 30
-		s.jpegQuality = 78
+		s.jpegQuality = 90
 		s.maxHeight = 1080
 	default: // "30fps"
 		s.targetFPS = 30
-		s.jpegQuality = 72
+		s.jpegQuality = 85
 		s.maxHeight = 1080
 	}
 }
@@ -219,7 +227,8 @@ func (s *Streamer) Stop() {
 	s.mu.Unlock()
 }
 
-// fastDownscaleRGBA rapidly resizes an RGBA image using direct memory mapping
+// fastDownscaleRGBA rapidly resizes an RGBA image using area-averaging box interpolation
+// to preserve sharp text, eliminate jagged pixel drop, and maintain 1080p clarity.
 func fastDownscaleRGBA(src *image.RGBA, dst *image.RGBA) {
 	if src == nil || dst == nil {
 		return
@@ -245,26 +254,48 @@ func fastDownscaleRGBA(src *image.RGBA, dst *image.RGBA) {
 	srcStride := src.Stride
 	dstStride := dst.Stride
 
-	// Precompute X mapping for extreme performance
-	xMap := make([]int, dstW)
+	// Precompute X mappings: 2 samples per horizontal pixel for clean box anti-aliasing
+	x0Map := make([]int, dstW)
+	x1Map := make([]int, dstW)
 	for dx := 0; dx < dstW; dx++ {
-		xMap[dx] = (dx * srcW / dstW) * 4
+		sx0 := (dx * srcW) / dstW
+		sx1 := sx0 + 1
+		if sx1 >= srcW {
+			sx1 = sx0
+		}
+		x0Map[dx] = sx0 * 4
+		x1Map[dx] = sx1 * 4
 	}
 
 	for dy := 0; dy < dstH; dy++ {
-		sy := dy * srcH / dstH
-		srcRowOffset := sy * srcStride
-		dstRowOffset := dy * dstStride
+		sy0 := (dy * srcH) / dstH
+		sy1 := sy0 + 1
+		if sy1 >= srcH {
+			sy1 = sy0
+		}
+		row0 := sy0 * srcStride
+		row1 := sy1 * srcStride
+		dstRow := dy * dstStride
 
 		for dx := 0; dx < dstW; dx++ {
-			sx4 := xMap[dx]
-			sOff := srcRowOffset + sx4
-			dOff := dstRowOffset + dx*4
+			off0 := x0Map[dx]
+			off1 := x1Map[dx]
 
-			if sOff >= 0 && sOff+3 < len(srcPix) && dOff >= 0 && dOff+3 < len(dstPix) {
-				dstPix[dOff] = srcPix[sOff]
-				dstPix[dOff+1] = srcPix[sOff+1]
-				dstPix[dOff+2] = srcPix[sOff+2]
+			p00 := row0 + off0
+			p10 := row0 + off1
+			p01 := row1 + off0
+			p11 := row1 + off1
+
+			dOff := dstRow + dx*4
+
+			if p11+3 < len(srcPix) && dOff+3 < len(dstPix) {
+				r := (uint32(srcPix[p00]) + uint32(srcPix[p10]) + uint32(srcPix[p01]) + uint32(srcPix[p11]) + 2) >> 2
+				g := (uint32(srcPix[p00+1]) + uint32(srcPix[p10+1]) + uint32(srcPix[p01+1]) + uint32(srcPix[p11+1]) + 2) >> 2
+				b := (uint32(srcPix[p00+2]) + uint32(srcPix[p10+2]) + uint32(srcPix[p01+2]) + uint32(srcPix[p11+2]) + 2) >> 2
+
+				dstPix[dOff] = uint8(r)
+				dstPix[dOff+1] = uint8(g)
+				dstPix[dOff+2] = uint8(b)
 				dstPix[dOff+3] = 255
 			}
 		}

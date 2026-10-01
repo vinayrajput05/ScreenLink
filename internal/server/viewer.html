@@ -238,6 +238,8 @@
       max-width: 100%;
       max-height: 100%;
       object-fit: contain;
+      image-rendering: -webkit-optimize-contrast;
+      image-rendering: high-quality;
       box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.9);
     }
 
@@ -681,7 +683,7 @@
     }
 
     const canvas = document.getElementById('screen-canvas');
-    const ctx = canvas ? canvas.getContext('2d', { alpha: false, desynchronized: true }) : null;
+    const ctx = canvas ? canvas.getContext('2d', { alpha: false }) : null;
     if (ctx) {
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
@@ -767,10 +769,12 @@
           }
         }
 
-        // Stale connection watchdog: if sharing is active, not paused, and no frame arrived in > 5s
+        // Stale connection watchdog: if sharing is active, not paused, and no frame arrived in > 10s AND ping failed
         if (!isStreamPaused && !isIntentionalClose && currentStreamState === 'active') {
-          if (Date.now() - lastFrameReceivedAt > 5000) {
-            console.warn('[Viewer] No frame received for 5s while stream active; forcing reconnect');
+          const noFramesFor10s = (Date.now() - lastFrameReceivedAt > 10000);
+          const socketDead = (!socket || socket.readyState !== WebSocket.OPEN);
+          if (noFramesFor10s || socketDead) {
+            console.warn('[Viewer] Frame stream stalled (>10s); recovering connection');
             lastFrameReceivedAt = Date.now();
             if (socket) {
               try { socket.close(); } catch(e) {}
@@ -1134,37 +1138,43 @@
       container.insertBefore(card, container.firstChild);
     }
 
-    let isDecodingFrame = false;
-    let decodeStartTime = 0;
-    let pendingFrameBuffer = null;
+    let isDecoding = false;
+    let decodeStart = 0;
+    let latestBuffer = null;
+    let activeFallbackImg = null;
 
     function handleBinaryFrame(buffer) {
       if (buffer.byteLength < 13) return;
 
       lastFrameReceivedAt = Date.now();
-
-      // Track incoming network bytes and frame count
       bytesReceivedWindow += buffer.byteLength;
-      framesRenderedWindow++;
 
       if (isStreamPaused) return;
 
-      // Watchdog: If previous frame decode took > 1000ms (browser hung/stalled), force reset
-      if (isDecodingFrame) {
-        if (Date.now() - decodeStartTime > 1000) {
-          console.warn('[Viewer] Frame decode watchdog triggered; resetting decoder');
-          isDecodingFrame = false;
-          pendingFrameBuffer = null;
-        } else {
-          pendingFrameBuffer = buffer;
-          return;
+      // Always hold only the latest frame buffer (intermediate frames dropped if decoding)
+      latestBuffer = buffer;
+
+      // Watchdog: If decoding has been stuck for > 800ms, force reset decoder state
+      if (isDecoding && (Date.now() - decodeStart > 800)) {
+        console.warn('[Viewer] Frame decode watchdog triggered; resetting decoder');
+        isDecoding = false;
+        if (activeFallbackImg) {
+          try { activeFallbackImg.src = ''; } catch(e) {}
+          activeFallbackImg = null;
         }
       }
 
-      renderFrameBuffer(buffer);
+      if (!isDecoding) {
+        processNextFrame();
+      }
     }
 
-    function renderFrameBuffer(buffer) {
+    function processNextFrame() {
+      if (isDecoding || !latestBuffer || isStreamPaused) return;
+
+      const buffer = latestBuffer;
+      latestBuffer = null;
+
       const view = new DataView(buffer);
       const msgType = view.getUint8(0);
       if (msgType !== 0x11) return; // 0x11 FULL_FRAME
@@ -1173,38 +1183,22 @@
       const height = view.getUint16(11);
       const jpegData = buffer.slice(13);
 
+      isDecoding = true;
+      decodeStart = Date.now();
+
       const blob = new Blob([jpegData], { type: 'image/jpeg' });
 
       if (typeof createImageBitmap === 'function') {
-        isDecodingFrame = true;
-        decodeStartTime = Date.now();
-
-        createImageBitmap(blob, { imageOrientation: 'none', premultiplyAlpha: 'none' }).then(bitmap => {
-          if (canvas.width !== width || canvas.height !== height) {
-            canvas.width = width;
-            canvas.height = height;
-            const statusEl = document.getElementById('stream-status');
-            if (statusEl) statusEl.textContent = `${width}×${height} • HD Live`;
-          }
-          ctx.drawImage(bitmap, 0, 0);
+        // Universal createImageBitmap without unportable options that cause WebKit/Safari to reject
+        createImageBitmap(blob).then(bitmap => {
+          renderBitmapToCanvas(bitmap, width, height);
           bitmap.close();
-
-          if (placeholder && !placeholder.classList.contains('hidden')) {
-            placeholder.classList.add('hidden');
-          }
-          if (gameWrap && !gameWrap.classList.contains('hidden')) {
-            gameWrap.classList.add('hidden');
-          }
-          canvas.classList.remove('hidden');
-
-          isDecodingFrame = false;
-          if (pendingFrameBuffer) {
-            const nextBuf = pendingFrameBuffer;
-            pendingFrameBuffer = null;
-            setTimeout(() => renderFrameBuffer(nextBuf), 0);
+          isDecoding = false;
+          framesRenderedWindow++;
+          if (latestBuffer) {
+            requestAnimationFrame(processNextFrame);
           }
         }).catch(err => {
-          isDecodingFrame = false;
           fallbackRenderBlob(blob, width, height);
         });
       } else {
@@ -1212,45 +1206,65 @@
       }
     }
 
+    function renderBitmapToCanvas(imageSource, width, height) {
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+        if (ctx) {
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+        }
+        const statusEl = document.getElementById('stream-status');
+        if (statusEl) {
+          statusEl.textContent = `${width}×${height} • 1080p HD Live`;
+        }
+      }
+      if (ctx) {
+        ctx.drawImage(imageSource, 0, 0);
+      }
+
+      if (placeholder && !placeholder.classList.contains('hidden')) {
+        placeholder.classList.add('hidden');
+      }
+      if (gameWrap && !gameWrap.classList.contains('hidden')) {
+        gameWrap.classList.add('hidden');
+      }
+      canvas.classList.remove('hidden');
+    }
+
     function fallbackRenderBlob(blob, width, height) {
-      isDecodingFrame = true;
-      decodeStartTime = Date.now();
       const url = URL.createObjectURL(blob);
       const img = new Image();
+      activeFallbackImg = img;
 
-      const finish = () => {
+      let cleaned = false;
+      const cleanup = () => {
+        if (cleaned) return;
+        cleaned = true;
         URL.revokeObjectURL(url);
         img.onload = null;
         img.onerror = null;
         img.onabort = null;
-        isDecodingFrame = false;
-        if (pendingFrameBuffer) {
-          const nextBuf = pendingFrameBuffer;
-          pendingFrameBuffer = null;
-          setTimeout(() => renderFrameBuffer(nextBuf), 0);
+        activeFallbackImg = null;
+        isDecoding = false;
+        if (latestBuffer) {
+          requestAnimationFrame(processNextFrame);
         }
       };
 
+      // 600ms safety timeout for fallback image load
+      const timer = setTimeout(cleanup, 600);
+
       img.onload = () => {
-        if (canvas.width !== width || canvas.height !== height) {
-          canvas.width = width;
-          canvas.height = height;
-          const statusEl = document.getElementById('stream-status');
-          if (statusEl) statusEl.textContent = `${width}×${height} • HD Live`;
-        }
-        ctx.drawImage(img, 0, 0);
-        if (placeholder && !placeholder.classList.contains('hidden')) {
-          placeholder.classList.add('hidden');
-        }
-        if (gameWrap && !gameWrap.classList.contains('hidden')) {
-          gameWrap.classList.add('hidden');
-        }
-        canvas.classList.remove('hidden');
-        finish();
+        clearTimeout(timer);
+        renderBitmapToCanvas(img, width, height);
+        framesRenderedWindow++;
+        cleanup();
       };
 
       img.onerror = img.onabort = () => {
-        finish();
+        clearTimeout(timer);
+        cleanup();
       };
 
       img.src = url;
@@ -1259,8 +1273,8 @@
     // Auto-recover from background / screen sleep tab throttling
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') {
-        isDecodingFrame = false;
-        pendingFrameBuffer = null;
+        isDecoding = false;
+        latestBuffer = null;
         lastFrameReceivedAt = Date.now();
         if (!isIntentionalClose && (!socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING)) {
           const savedName = localStorage.getItem('screenlink_display_name') || 'Viewer';

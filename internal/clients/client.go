@@ -184,7 +184,6 @@ func (c *Client) StartWritePump(onDisconnect func()) {
 			}
 		}()
 
-		consecutiveErrors := 0
 		for {
 			select {
 			case <-sChan:
@@ -200,21 +199,16 @@ func (c *Client) StartWritePump(onDisconnect func()) {
 					return
 				}
 
-				// 4s write deadline gives enough time for high-resolution frames over Wi-Fi
-				_ = conn.SetWriteDeadline(time.Now().Add(4 * time.Second))
+				// 2s write deadline is ideal for real-time 1080p frames over Wi-Fi/LAN
+				_ = conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
 				c.writeMu.Lock()
 				err := conn.WriteMessage(websocket.BinaryMessage, frame)
 				c.writeMu.Unlock()
 				if err != nil {
-					consecutiveErrors++
-					// Only exit write pump if connection is repeatedly failing
-					if consecutiveErrors >= 3 {
-						return
-					}
-					time.Sleep(30 * time.Millisecond)
-					continue
+					// Once a websocket write encounters an error, connection framing is broken.
+					// Exit write pump immediately to close the socket and allow prompt reconnection.
+					return
 				}
-				consecutiveErrors = 0
 				c.RecordBytesSent(len(frame))
 			}
 		}
