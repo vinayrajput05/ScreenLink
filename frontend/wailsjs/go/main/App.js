@@ -10,6 +10,10 @@ export function ApproveClient(arg1) {
   return window['go']['main']['App']['ApproveClient'](arg1);
 }
 
+export function CheckScreenCapturePermission() {
+  return window['go']['main']['App']['CheckScreenCapturePermission']();
+}
+
 export function ClearChatHistory() {
   return window['go']['main']['App']['ClearChatHistory']();
 }
@@ -58,12 +62,20 @@ export function OnClientStateChanged() {
   return window['go']['main']['App']['OnClientStateChanged']();
 }
 
+export function OpenScreenCaptureSettings() {
+  return window['go']['main']['App']['OpenScreenCaptureSettings']();
+}
+
 export function PauseScreenShare() {
   return window['go']['main']['App']['PauseScreenShare']();
 }
 
 export function RejectClient(arg1) {
   return window['go']['main']['App']['RejectClient'](arg1);
+}
+
+export function RequestScreenCapturePermission() {
+  return window['go']['main']['App']['RequestScreenCapturePermission']();
 }
 
 export function ResumeScreenShare() {

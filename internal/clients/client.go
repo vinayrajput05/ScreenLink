@@ -48,10 +48,6 @@ type Client struct {
 	lastBandwidthReset time.Time
 	bandwidthKBps      int
 	latencyMs          int
-	frameChan          chan []byte
-	stopChan           chan struct{}
-	writePumpRunning   bool
-	writeMu            sync.Mutex
 	mu                 sync.Mutex
 }
 
@@ -160,119 +156,33 @@ func (c *Client) ToDTO() ClientDTO {
 	}
 }
 
-func (c *Client) StartWritePump(onDisconnect func()) {
-	c.mu.Lock()
-	if c.writePumpRunning {
-		c.mu.Unlock()
-		return
-	}
-	c.frameChan = make(chan []byte, 1)
-	c.stopChan = make(chan struct{})
-	c.writePumpRunning = true
-	fChan := c.frameChan
-	sChan := c.stopChan
-	c.mu.Unlock()
-
-	go func() {
-		defer func() {
-			_ = recover()
-			c.mu.Lock()
-			c.writePumpRunning = false
-			c.mu.Unlock()
-			if onDisconnect != nil {
-				onDisconnect()
-			}
-		}()
-
-		for {
-			select {
-			case <-sChan:
-				return
-			case frame, ok := <-fChan:
-				if !ok {
-					return
-				}
-				c.mu.Lock()
-				conn := c.Conn
-				c.mu.Unlock()
-				if conn == nil {
-					return
-				}
-
-				// 2s write deadline is ideal for real-time 1080p frames over Wi-Fi/LAN
-				_ = conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
-				c.writeMu.Lock()
-				err := conn.WriteMessage(websocket.BinaryMessage, frame)
-				c.writeMu.Unlock()
-				if err != nil {
-					// Once a websocket write encounters an error, connection framing is broken.
-					// Exit write pump immediately to close the socket and allow prompt reconnection.
-					return
-				}
-				c.RecordBytesSent(len(frame))
-			}
-		}
-	}()
-}
-
-func (c *Client) StopWritePump() {
-	c.mu.Lock()
-	if !c.writePumpRunning {
-		c.mu.Unlock()
-		return
-	}
-	c.writePumpRunning = false
-	if c.stopChan != nil {
-		select {
-		case <-c.stopChan:
-		default:
-			close(c.stopChan)
-		}
-	}
-	c.mu.Unlock()
-}
-
-// TrySendFrame queues a video frame for delivery without blocking the caller.
-// If the client's write pump is currently busy writing a previous frame, the frame
-// is dropped for this client only to ensure 0 latency and prevent server freezes.
-func (c *Client) TrySendFrame(data []byte) bool {
-	c.mu.Lock()
-	if !c.writePumpRunning || c.frameChan == nil {
-		c.mu.Unlock()
-		return false
-	}
-	fChan := c.frameChan
-	c.mu.Unlock()
-
-	select {
-	case fChan <- data:
-		return true
-	default:
-		// Client is falling behind; drop frame locally
-		return false
-	}
-}
-
 func (c *Client) SafeSend(messageType int, data []byte) error {
 	c.mu.Lock()
-	conn := c.Conn
-	c.mu.Unlock()
-	if conn == nil {
+	defer c.mu.Unlock()
+	if c.Conn == nil {
 		return nil
 	}
-
-	deadline := 5 * time.Second
-	if messageType == websocket.BinaryMessage {
-		deadline = 600 * time.Millisecond
+	// Binary frames (video) get a shorter deadline to avoid blocking the encoder
+	// Text frames (chat, control) get more time to handle high-latency Wi-Fi
+	deadline := 8 * time.Second
+	if messageType == 2 { // BinaryMessage
+		deadline = 4 * time.Second
 	}
-
-	c.writeMu.Lock()
-	defer c.writeMu.Unlock()
-
-	_ = conn.SetWriteDeadline(time.Now().Add(deadline))
-	err := conn.WriteMessage(messageType, data)
+	_ = c.Conn.SetWriteDeadline(time.Now().Add(deadline))
+	err := c.Conn.WriteMessage(messageType, data)
 	if err == nil {
-		c.RecordBytesSent(len(data))
+		c.bytesSentWindow += int64(len(data))
+		now := time.Now()
+		if c.lastBandwidthReset.IsZero() {
+			c.lastBandwidthReset = now
+		} else {
+			elapsed := now.Sub(c.lastBandwidthReset)
+			if elapsed >= time.Second {
+				c.bandwidthKBps = int(float64(c.bytesSentWindow) / 1024.0 / elapsed.Seconds())
+				c.bytesSentWindow = 0
+				c.lastBandwidthReset = now
+			}
+		}
 	}
 	return err
 }

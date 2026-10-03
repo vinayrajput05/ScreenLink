@@ -8,6 +8,8 @@ export function ApproveAll():Promise<void>;
 
 export function ApproveClient(arg1:string):Promise<void>;
 
+export function CheckScreenCapturePermission():Promise<boolean>;
+
 export function ClearChatHistory():Promise<void>;
 
 export function DisconnectAll():Promise<void>;
@@ -32,9 +34,13 @@ export function IsScreenStreaming():Promise<boolean>;
 
 export function OnClientStateChanged():Promise<void>;
 
+export function OpenScreenCaptureSettings():Promise<void>;
+
 export function PauseScreenShare():Promise<void>;
 
 export function RejectClient(arg1:string):Promise<void>;
+
+export function RequestScreenCapturePermission():Promise<boolean>;
 
 export function ResumeScreenShare():Promise<void>;
 

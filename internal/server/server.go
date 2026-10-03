@@ -172,7 +172,6 @@ func (s *Server) Stop() error {
 
 	// Disconnect all clients with reason
 	for _, c := range s.clients {
-		c.StopWritePump()
 		stopMsg, _ := json.Marshal(WsMessage{
 			Type:  "status",
 			State: "server_stopped",
@@ -258,26 +257,19 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		if currentClientID != "" {
 			s.clientsMu.Lock()
 			if c, ok := s.clients[currentClientID]; ok {
-				// Only clear connection and mark disconnected if c.Conn is STILL this specific connection.
-				// If the client has already reconnected on a newer connection, do NOT kill it!
-				if c.Conn == conn {
-					c.StopWritePump()
-					c.Conn = nil
-					// Keep approved clients in the map so they can reconnect without re-approval.
-					// Only remove pending/rejected clients — they have no prior session.
-					if c.State == clients.ClientPending || c.State == clients.ClientRejected {
-						delete(s.clients, currentClientID)
-					} else {
-						c.State = clients.ClientDisconnected
-					}
-					s.clientsMu.Unlock()
-					if s.callback != nil {
-						go s.callback.OnClientStateChanged()
-					}
-					return
+				c.Conn = nil
+				// Keep approved clients in the map so they can reconnect without re-approval.
+				// Only remove pending/rejected clients — they have no prior session.
+				if c.State == clients.ClientPending || c.State == clients.ClientRejected {
+					delete(s.clients, currentClientID)
+				} else {
+					c.State = clients.ClientDisconnected
 				}
 			}
 			s.clientsMu.Unlock()
+			if s.callback != nil {
+				go s.callback.OnClientStateChanged()
+			}
 		}
 	}()
 
@@ -320,11 +312,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				}
 				s.clients[msg.ClientID] = client
 			} else {
-				// Existing client reconnecting — stop previous write pump and close stale socket
-				if client.Conn != nil && client.Conn != conn {
-					client.StopWritePump()
-					_ = client.Conn.Close()
-				}
+				// Existing client reconnecting — update their connection
 				client.Conn = conn
 				if strings.TrimSpace(msg.DisplayName) != "" {
 					client.DisplayName = strings.TrimSpace(msg.DisplayName)
@@ -348,9 +336,6 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 			// If approved, send chat history and current stream state
 			if currentState == clients.ClientApproved {
-				client.StartWritePump(func() {
-					s.handleClientDisconnected(client.ID, conn)
-				})
 				s.sendChatHistoryTo(client)
 				s.stateMu.RLock()
 				curStreamState := s.streamState
@@ -451,22 +436,18 @@ func (s *Server) BroadcastStreamState(state string) {
 	}
 }
 
-// BroadcastFrame implements FrameBroadcaster with non-blocking per-client delivery
+// BroadcastFrame implements FrameBroadcaster
 func (s *Server) BroadcastFrame(frameData []byte) {
 	if s == nil {
 		return
 	}
 	s.clientsMu.RLock()
-	var approved []*clients.Client
-	for _, client := range s.clients {
-		if client.State == clients.ClientApproved && client.Conn != nil {
-			approved = append(approved, client)
-		}
-	}
-	s.clientsMu.RUnlock()
+	defer s.clientsMu.RUnlock()
 
-	for _, client := range approved {
-		client.TrySendFrame(frameData)
+	for _, client := range s.clients {
+		if client.State == clients.ClientApproved {
+			_ = client.SafeSend(websocket.BinaryMessage, frameData)
+		}
 	}
 }
 
@@ -495,10 +476,6 @@ func (s *Server) ApproveClient(clientID string) {
 	if exists {
 		client.State = clients.ClientApproved
 		client.ConnectedAt = time.Now()
-		activeConn := client.Conn
-		client.StartWritePump(func() {
-			s.handleClientDisconnected(client.ID, activeConn)
-		})
 		resp, _ := json.Marshal(WsMessage{
 			Type:  "status",
 			State: "approved",
@@ -529,7 +506,6 @@ func (s *Server) RejectClient(clientID string) {
 	s.clientsMu.Lock()
 	client, exists := s.clients[clientID]
 	if exists {
-		client.StopWritePump()
 		client.State = clients.ClientRejected
 		resp, _ := json.Marshal(WsMessage{
 			Type:  "status",
@@ -557,10 +533,6 @@ func (s *Server) ApproveAll() {
 		if client.State == clients.ClientPending {
 			client.State = clients.ClientApproved
 			client.ConnectedAt = time.Now()
-			activeConn := client.Conn
-			client.StartWritePump(func() {
-				s.handleClientDisconnected(client.ID, activeConn)
-			})
 			resp, _ := json.Marshal(WsMessage{
 				Type:  "status",
 				State: "approved",
@@ -583,7 +555,6 @@ func (s *Server) DisconnectClient(clientID string) {
 	s.clientsMu.Lock()
 	client, exists := s.clients[clientID]
 	if exists {
-		client.StopWritePump()
 		client.State = clients.ClientDisconnected
 		resp, _ := json.Marshal(WsMessage{
 			Type:  "status",
@@ -609,7 +580,6 @@ func (s *Server) DisconnectAll() {
 	s.clientsMu.Lock()
 	for id, client := range s.clients {
 		if client.State == clients.ClientApproved {
-			client.StopWritePump()
 			client.State = clients.ClientDisconnected
 			resp, _ := json.Marshal(WsMessage{
 				Type:  "status",
@@ -627,31 +597,6 @@ func (s *Server) DisconnectAll() {
 	if s.callback != nil {
 		go s.callback.OnClientStateChanged()
 	}
-}
-
-func (s *Server) handleClientDisconnected(clientID string, conn *websocket.Conn) {
-	if s == nil {
-		return
-	}
-	s.clientsMu.Lock()
-	if c, ok := s.clients[clientID]; ok {
-		// Only mark disconnected if c.Conn is STILL this specific connection.
-		// If the client has already reconnected with a newer socket, do NOT disconnect it!
-		if conn == nil || c.Conn == conn {
-			c.StopWritePump()
-			if c.Conn != nil {
-				_ = c.Conn.Close()
-				c.Conn = nil
-			}
-			c.State = clients.ClientDisconnected
-			s.clientsMu.Unlock()
-			if s.callback != nil {
-				go s.callback.OnClientStateChanged()
-			}
-			return
-		}
-	}
-	s.clientsMu.Unlock()
 }
 
 // BroadcastChatMessage broadcasts rich messages/source code to all viewers

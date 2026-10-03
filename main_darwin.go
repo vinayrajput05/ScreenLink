@@ -4,8 +4,8 @@
 package main
 
 /*
-#cgo CFLAGS: -x objective-c
-#cgo LDFLAGS: -framework Cocoa
+#cgo CFLAGS: -x objective-c -mmacosx-version-min=14.5
+#cgo LDFLAGS: -framework Cocoa -mmacosx-version-min=14.5
 #import <Cocoa/Cocoa.h>
 
 void setMacDockIcon(const void* data, int length) {

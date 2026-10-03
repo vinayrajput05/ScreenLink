@@ -238,8 +238,6 @@
       max-width: 100%;
       max-height: 100%;
       object-fit: contain;
-      image-rendering: -webkit-optimize-contrast;
-      image-rendering: high-quality;
       box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.9);
     }
 
@@ -660,8 +658,6 @@
   <script>
     let socket = null;
     let isStreamPaused = false;
-    let currentStreamState = 'stopped';
-    let lastFrameReceivedAt = Date.now();
     let clientId = localStorage.getItem('screenlink_client_id');
     if (!clientId) {
       clientId = (typeof crypto.randomUUID === 'function') ? crypto.randomUUID() : 'client-' + Math.random().toString(36).substring(2, 11);
@@ -683,23 +679,10 @@
     }
 
     const canvas = document.getElementById('screen-canvas');
-    const ctx = canvas ? canvas.getContext('2d', { alpha: false }) : null;
+    const ctx = canvas ? canvas.getContext('2d', { alpha: false, desynchronized: true }) : null;
     if (ctx) {
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
-    }
-    if (canvas) {
-      canvas.addEventListener('contextlost', (e) => {
-        e.preventDefault();
-        console.warn('[Viewer] Canvas context lost');
-      });
-      canvas.addEventListener('contextrestored', () => {
-        console.info('[Viewer] Canvas context restored');
-        if (ctx) {
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-        }
-      });
     }
     const placeholder = document.getElementById('screen-placeholder');
     const gameWrap = document.getElementById('memory-game-wrap');
@@ -766,20 +749,6 @@
               if (i <= bars) bar.classList.add('active');
               else bar.classList.remove('active');
             }
-          }
-        }
-
-        // Stale connection watchdog: if sharing is active, not paused, and no frame arrived in > 10s AND ping failed
-        if (!isStreamPaused && !isIntentionalClose && currentStreamState === 'active') {
-          const noFramesFor10s = (Date.now() - lastFrameReceivedAt > 10000);
-          const socketDead = (!socket || socket.readyState !== WebSocket.OPEN);
-          if (noFramesFor10s || socketDead) {
-            console.warn('[Viewer] Frame stream stalled (>10s); recovering connection');
-            lastFrameReceivedAt = Date.now();
-            if (socket) {
-              try { socket.close(); } catch(e) {}
-            }
-            scheduleReconnect(localStorage.getItem('screenlink_display_name') || 'Viewer');
           }
         }
       }, 1000);
@@ -961,13 +930,11 @@
           } else if (data.type === 'status') {
             handleStatusChange(data.state);
           } else if (data.type === 'stream_state') {
-            currentStreamState = data.state;
             if (data.state === 'paused') {
               setStreamPauseState(true, 'paused');
             } else if (data.state === 'stopped') {
               setStreamPauseState(true, 'stopped');
             } else if (data.state === 'active') {
-              lastFrameReceivedAt = Date.now();
               setStreamPauseState(false);
             }
           } else if (data.type === 'chat_message' || data.type === 'code' || data.type === 'announcement') {
@@ -1138,43 +1105,28 @@
       container.insertBefore(card, container.firstChild);
     }
 
-    let isDecoding = false;
-    let decodeStart = 0;
-    let latestBuffer = null;
-    let activeFallbackImg = null;
+    let isDecodingFrame = false;
+    let pendingFrameBuffer = null;
 
     function handleBinaryFrame(buffer) {
       if (buffer.byteLength < 13) return;
 
-      lastFrameReceivedAt = Date.now();
+      // Track incoming network bytes and frame count
       bytesReceivedWindow += buffer.byteLength;
+      framesRenderedWindow++;
 
       if (isStreamPaused) return;
 
-      // Always hold only the latest frame buffer (intermediate frames dropped if decoding)
-      latestBuffer = buffer;
-
-      // Watchdog: If decoding has been stuck for > 800ms, force reset decoder state
-      if (isDecoding && (Date.now() - decodeStart > 800)) {
-        console.warn('[Viewer] Frame decode watchdog triggered; resetting decoder');
-        isDecoding = false;
-        if (activeFallbackImg) {
-          try { activeFallbackImg.src = ''; } catch(e) {}
-          activeFallbackImg = null;
-        }
+      // If already decoding a frame, hold the latest buffer to render next, dropping intermediate stale frames
+      if (isDecodingFrame) {
+        pendingFrameBuffer = buffer;
+        return;
       }
 
-      if (!isDecoding) {
-        processNextFrame();
-      }
+      renderFrameBuffer(buffer);
     }
 
-    function processNextFrame() {
-      if (isDecoding || !latestBuffer || isStreamPaused) return;
-
-      const buffer = latestBuffer;
-      latestBuffer = null;
-
+    function renderFrameBuffer(buffer) {
       const view = new DataView(buffer);
       const msgType = view.getUint8(0);
       if (msgType !== 0x11) return; // 0x11 FULL_FRAME
@@ -1183,22 +1135,36 @@
       const height = view.getUint16(11);
       const jpegData = buffer.slice(13);
 
-      isDecoding = true;
-      decodeStart = Date.now();
-
       const blob = new Blob([jpegData], { type: 'image/jpeg' });
 
       if (typeof createImageBitmap === 'function') {
-        // Universal createImageBitmap without unportable options that cause WebKit/Safari to reject
-        createImageBitmap(blob).then(bitmap => {
-          renderBitmapToCanvas(bitmap, width, height);
+        isDecodingFrame = true;
+        createImageBitmap(blob, { imageOrientation: 'none', premultiplyAlpha: 'none' }).then(bitmap => {
+          if (canvas.width !== width || canvas.height !== height) {
+            canvas.width = width;
+            canvas.height = height;
+            const statusEl = document.getElementById('stream-status');
+            if (statusEl) statusEl.textContent = `${width}×${height} • HD Live`;
+          }
+          ctx.drawImage(bitmap, 0, 0);
           bitmap.close();
-          isDecoding = false;
-          framesRenderedWindow++;
-          if (latestBuffer) {
-            requestAnimationFrame(processNextFrame);
+
+          if (placeholder && !placeholder.classList.contains('hidden')) {
+            placeholder.classList.add('hidden');
+          }
+          if (gameWrap && !gameWrap.classList.contains('hidden')) {
+            gameWrap.classList.add('hidden');
+          }
+          canvas.classList.remove('hidden');
+
+          isDecodingFrame = false;
+          if (pendingFrameBuffer) {
+            const nextBuf = pendingFrameBuffer;
+            pendingFrameBuffer = null;
+            renderFrameBuffer(nextBuf);
           }
         }).catch(err => {
+          isDecodingFrame = false;
           fallbackRenderBlob(blob, width, height);
         });
       } else {
@@ -1206,82 +1172,34 @@
       }
     }
 
-    function renderBitmapToCanvas(imageSource, width, height) {
-      if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width;
-        canvas.height = height;
-        if (ctx) {
-          ctx.imageSmoothingEnabled = true;
-          ctx.imageSmoothingQuality = 'high';
-        }
-        const statusEl = document.getElementById('stream-status');
-        if (statusEl) {
-          statusEl.textContent = `${width}×${height} • 1080p HD Live`;
-        }
-      }
-      if (ctx) {
-        ctx.drawImage(imageSource, 0, 0);
-      }
-
-      if (placeholder && !placeholder.classList.contains('hidden')) {
-        placeholder.classList.add('hidden');
-      }
-      if (gameWrap && !gameWrap.classList.contains('hidden')) {
-        gameWrap.classList.add('hidden');
-      }
-      canvas.classList.remove('hidden');
-    }
-
     function fallbackRenderBlob(blob, width, height) {
       const url = URL.createObjectURL(blob);
       const img = new Image();
-      activeFallbackImg = img;
-
-      let cleaned = false;
-      const cleanup = () => {
-        if (cleaned) return;
-        cleaned = true;
+      img.onload = () => {
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+          const statusEl = document.getElementById('stream-status');
+          if (statusEl) statusEl.textContent = `${width}×${height} • HD Live`;
+        }
+        ctx.drawImage(img, 0, 0);
         URL.revokeObjectURL(url);
-        img.onload = null;
-        img.onerror = null;
-        img.onabort = null;
-        activeFallbackImg = null;
-        isDecoding = false;
-        if (latestBuffer) {
-          requestAnimationFrame(processNextFrame);
+        if (placeholder && !placeholder.classList.contains('hidden')) {
+          placeholder.classList.add('hidden');
+        }
+        if (gameWrap && !gameWrap.classList.contains('hidden')) {
+          gameWrap.classList.add('hidden');
+        }
+        canvas.classList.remove('hidden');
+
+        if (pendingFrameBuffer) {
+          const nextBuf = pendingFrameBuffer;
+          pendingFrameBuffer = null;
+          renderFrameBuffer(nextBuf);
         }
       };
-
-      // 600ms safety timeout for fallback image load
-      const timer = setTimeout(cleanup, 600);
-
-      img.onload = () => {
-        clearTimeout(timer);
-        renderBitmapToCanvas(img, width, height);
-        framesRenderedWindow++;
-        cleanup();
-      };
-
-      img.onerror = img.onabort = () => {
-        clearTimeout(timer);
-        cleanup();
-      };
-
       img.src = url;
     }
-
-    // Auto-recover from background / screen sleep tab throttling
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') {
-        isDecoding = false;
-        latestBuffer = null;
-        lastFrameReceivedAt = Date.now();
-        if (!isIntentionalClose && (!socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING)) {
-          const savedName = localStorage.getItem('screenlink_display_name') || 'Viewer';
-          scheduleReconnect(savedName);
-        }
-      }
-    });
 
     function handleStatusChange(state) {
       switch (state) {

@@ -223,6 +223,11 @@ func (a *App) GetSystemInfo() SystemInfo {
 
 // StartSharing starts/ensures local server and screen capture streamer
 func (a *App) StartSharing(port int) (bool, error) {
+	// On macOS, verify and trigger Screen Recording permission prompt if not yet granted
+	if !capture.HasScreenCapturePermission() {
+		capture.RequestScreenCapturePermission()
+	}
+
 	srv, err := a.ensureServerRunning(port)
 	if err != nil {
 		return false, err
@@ -506,4 +511,19 @@ func (a *App) GetClients() ClientsPayload {
 		Pending:   srv.GetPendingClients(),
 		Connected: srv.GetConnectedClients(),
 	}
+}
+
+// CheckScreenCapturePermission returns whether OS permission is granted to record full screen
+func (a *App) CheckScreenCapturePermission() bool {
+	return capture.HasScreenCapturePermission()
+}
+
+// RequestScreenCapturePermission prompts the OS to grant screen recording permission
+func (a *App) RequestScreenCapturePermission() bool {
+	return capture.RequestScreenCapturePermission()
+}
+
+// OpenScreenCaptureSettings opens macOS System Settings directly to Privacy & Security > Screen Recording
+func (a *App) OpenScreenCaptureSettings() {
+	_ = capture.OpenScreenCaptureSettings()
 }

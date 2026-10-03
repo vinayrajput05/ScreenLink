@@ -42,20 +42,23 @@ import {
   SendChatMessage,
   GetChatMessages,
   ClearChatHistory,
+  CheckScreenCapturePermission,
+  RequestScreenCapturePermission,
+  OpenScreenCaptureSettings,
 } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 
 const DEFAULT_PRESETS: QualityPreset[] = [
-  { id: '30fps', name: '1080p Full HD (30 FPS)', description: 'Recommended • Razor-Sharp Text Clarity', maxHeight: 1080, quality: 85, targetFps: 30 },
-  { id: '45fps', name: '1080p High Motion (45 FPS)', description: '45 FPS Fluid • Balanced Clarity', maxHeight: 1080, quality: 82, targetFps: 45 },
-  { id: '60fps', name: '1080p Pro Motion (60 FPS)', description: '60 FPS Pro • Zero Stutter', maxHeight: 1080, quality: 80, targetFps: 60 },
-  { id: 'clarity_30', name: '1080p Ultra Text (30 FPS)', description: 'Maximum 1080p Sharpness (Quality 90)', maxHeight: 1080, quality: 90, targetFps: 30 },
+  { id: '30fps', name: '30 FPS (Smooth 1080p)', description: 'Minimum 30 FPS • Recommended', maxHeight: 1080, quality: 82, targetFps: 30 },
+  { id: '60fps', name: '60 FPS (Pro Motion)', description: '60 FPS Ultra • Zero Stutter', maxHeight: 1080, quality: 78, targetFps: 60 },
+  { id: '45fps', name: '45 FPS (High Action)', description: '45 FPS • High Motion Fluidity', maxHeight: 1080, quality: 80, targetFps: 45 },
 ];
 
 export const App: React.FC = () => {
   const [status, setStatus] = useState<ServerStatus>('running');
   const [isScreenActive, setIsScreenActive] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [hasScreenPermission, setHasScreenPermission] = useState<boolean>(true);
   const [shareUrl, setShareUrl] = useState('http://127.0.0.1:8080');
   const [availableUrls, setAvailableUrls] = useState<string[]>(['http://127.0.0.1:8080']);
   const [displays, setDisplays] = useState<DisplayInfo[]>([]);
@@ -67,6 +70,17 @@ export const App: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'info' | 'success' | 'warning' } | null>(null);
+
+  const checkPermission = useCallback(async () => {
+    try {
+      if (typeof CheckScreenCapturePermission === 'function') {
+        const allowed = await CheckScreenCapturePermission();
+        setHasScreenPermission(allowed);
+      }
+    } catch {
+      // Ignored on non-macOS
+    }
+  }, []);
 
   const showNotification = (message: string, type: 'info' | 'success' | 'warning' = 'info') => {
     setNotification({ message, type });
@@ -163,6 +177,7 @@ export const App: React.FC = () => {
           setStatus(sharing ? 'running' : 'stopped');
         }
 
+        await checkPermission();
         await syncClients();
         await syncChat();
         await syncScreenState();
@@ -213,6 +228,14 @@ export const App: React.FC = () => {
 
   const handleStartShare = async () => {
     try {
+      if (typeof CheckScreenCapturePermission === 'function') {
+        const allowed = await CheckScreenCapturePermission();
+        setHasScreenPermission(allowed);
+        if (!allowed && typeof RequestScreenCapturePermission === 'function') {
+          await RequestScreenCapturePermission();
+        }
+      }
+
       if (typeof SelectDisplay === 'function') {
         await SelectDisplay(selectedDisplayId);
       }
@@ -432,6 +455,42 @@ export const App: React.FC = () => {
                 setIsQrModalOpen(true);
               }}
             />
+
+            {/* macOS Screen Recording Permission Alert Banner */}
+            {!hasScreenPermission && (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-900">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">⚠️</span>
+                  <div className="text-xs">
+                    <p className="font-bold text-sm text-amber-950">Screen Recording Permission Required</p>
+                    <p className="text-amber-800/90 mt-0.5">macOS is restricting capture to only this window. Grant permission in System Settings to share your full desktop and all apps.</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (typeof RequestScreenCapturePermission === 'function') {
+                        await RequestScreenCapturePermission();
+                      }
+                      if (typeof OpenScreenCaptureSettings === 'function') {
+                        await OpenScreenCaptureSettings();
+                      }
+                    }}
+                    className="flex-1 sm:flex-initial px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-all cursor-pointer"
+                  >
+                    Open System Settings
+                  </button>
+                  <button
+                    type="button"
+                    onClick={checkPermission}
+                    className="px-3 py-1.5 bg-white hover:bg-slate-50 border border-amber-200 text-amber-900 rounded-xl text-xs font-medium transition-all cursor-pointer"
+                  >
+                    Refresh
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Screen Capture Controls Card */}
             <ScreenControlCard
