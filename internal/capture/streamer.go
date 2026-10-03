@@ -55,7 +55,7 @@ func NewStreamer(broadcaster FrameBroadcaster) *Streamer {
 	s := &Streamer{
 		displayIndex:   0,
 		targetFPS:      30,
-		jpegQuality:    85,
+		jpegQuality:    72,
 		maxHeight:      1080,
 		selectedPreset: "30fps",
 		broadcaster:    broadcaster,
@@ -74,35 +74,27 @@ func GetAvailableQualityPresets() []QualityPreset {
 	return []QualityPreset{
 		{
 			ID:          "30fps",
-			Name:        "1080p Full HD (30 FPS)",
-			Description: "Recommended • Razor-Sharp Text Clarity",
+			Name:        "30 FPS (Smooth 1080p)",
+			Description: "Minimum 30 FPS • Ultra-Low Latency",
 			MaxHeight:   1080,
-			Quality:     85,
+			Quality:     72,
 			TargetFPS:   30,
 		},
 		{
 			ID:          "45fps",
-			Name:        "1080p High Motion (45 FPS)",
-			Description: "45 FPS Fluid • Balanced Clarity",
+			Name:        "45 FPS (High Framerate)",
+			Description: "45 FPS High Motion • Balanced",
 			MaxHeight:   1080,
-			Quality:     82,
+			Quality:     70,
 			TargetFPS:   45,
 		},
 		{
 			ID:          "60fps",
-			Name:        "1080p Pro Motion (60 FPS)",
+			Name:        "60 FPS (Pro Motion)",
 			Description: "60 FPS Pro • Zero Stutter",
 			MaxHeight:   1080,
-			Quality:     80,
+			Quality:     68,
 			TargetFPS:   60,
-		},
-		{
-			ID:          "clarity_30",
-			Name:        "1080p Ultra Text (30 FPS)",
-			Description: "Maximum 1080p Sharpness (Quality 90)",
-			MaxHeight:   1080,
-			Quality:     90,
-			TargetFPS:   30,
 		},
 	}
 }
@@ -159,19 +151,19 @@ func (s *Streamer) SetQualityPreset(presetID string) {
 	switch presetID {
 	case "60fps":
 		s.targetFPS = 60
-		s.jpegQuality = 80
+		s.jpegQuality = 68
 		s.maxHeight = 1080
 	case "45fps":
 		s.targetFPS = 45
-		s.jpegQuality = 82
+		s.jpegQuality = 70
 		s.maxHeight = 1080
 	case "clarity_30":
 		s.targetFPS = 30
-		s.jpegQuality = 90
+		s.jpegQuality = 78
 		s.maxHeight = 1080
 	default: // "30fps"
 		s.targetFPS = 30
-		s.jpegQuality = 85
+		s.jpegQuality = 72
 		s.maxHeight = 1080
 	}
 }
@@ -227,16 +219,8 @@ func (s *Streamer) Stop() {
 	s.mu.Unlock()
 }
 
-// fastDownscaleRGBA rapidly resizes an RGBA image using area-averaging box interpolation
-// to preserve sharp text, eliminate jagged pixel drop, and maintain 1080p clarity.
+// fastDownscaleRGBA rapidly resizes an RGBA image using direct memory mapping
 func fastDownscaleRGBA(src *image.RGBA, dst *image.RGBA) {
-	if src == nil || dst == nil {
-		return
-	}
-	defer func() {
-		_ = recover()
-	}()
-
 	srcBounds := src.Bounds()
 	dstBounds := dst.Bounds()
 
@@ -254,48 +238,26 @@ func fastDownscaleRGBA(src *image.RGBA, dst *image.RGBA) {
 	srcStride := src.Stride
 	dstStride := dst.Stride
 
-	// Precompute X mappings: 2 samples per horizontal pixel for clean box anti-aliasing
-	x0Map := make([]int, dstW)
-	x1Map := make([]int, dstW)
+	// Precompute X mapping for extreme performance
+	xMap := make([]int, dstW)
 	for dx := 0; dx < dstW; dx++ {
-		sx0 := (dx * srcW) / dstW
-		sx1 := sx0 + 1
-		if sx1 >= srcW {
-			sx1 = sx0
-		}
-		x0Map[dx] = sx0 * 4
-		x1Map[dx] = sx1 * 4
+		xMap[dx] = (dx * srcW / dstW) * 4
 	}
 
 	for dy := 0; dy < dstH; dy++ {
-		sy0 := (dy * srcH) / dstH
-		sy1 := sy0 + 1
-		if sy1 >= srcH {
-			sy1 = sy0
-		}
-		row0 := sy0 * srcStride
-		row1 := sy1 * srcStride
-		dstRow := dy * dstStride
+		sy := dy * srcH / dstH
+		srcRowOffset := sy * srcStride
+		dstRowOffset := dy * dstStride
 
 		for dx := 0; dx < dstW; dx++ {
-			off0 := x0Map[dx]
-			off1 := x1Map[dx]
+			sx4 := xMap[dx]
+			sOff := srcRowOffset + sx4
+			dOff := dstRowOffset + dx*4
 
-			p00 := row0 + off0
-			p10 := row0 + off1
-			p01 := row1 + off0
-			p11 := row1 + off1
-
-			dOff := dstRow + dx*4
-
-			if p11+3 < len(srcPix) && dOff+3 < len(dstPix) {
-				r := (uint32(srcPix[p00]) + uint32(srcPix[p10]) + uint32(srcPix[p01]) + uint32(srcPix[p11]) + 2) >> 2
-				g := (uint32(srcPix[p00+1]) + uint32(srcPix[p10+1]) + uint32(srcPix[p01+1]) + uint32(srcPix[p11+1]) + 2) >> 2
-				b := (uint32(srcPix[p00+2]) + uint32(srcPix[p10+2]) + uint32(srcPix[p01+2]) + uint32(srcPix[p11+2]) + 2) >> 2
-
-				dstPix[dOff] = uint8(r)
-				dstPix[dOff+1] = uint8(g)
-				dstPix[dOff+2] = uint8(b)
+			if sOff+3 < len(srcPix) && dOff+3 < len(dstPix) {
+				dstPix[dOff] = srcPix[sOff]
+				dstPix[dOff+1] = srcPix[sOff+1]
+				dstPix[dOff+2] = srcPix[sOff+2]
 				dstPix[dOff+3] = 255
 			}
 		}
@@ -336,71 +298,59 @@ func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 					continue
 				}
 
-				// Safe per-frame execution: transient panic on a single frame will not terminate encoder
-				func() {
-					defer func() {
-						_ = recover()
-					}()
+				s.mu.Lock()
+				quality := s.jpegQuality
+				maxH := s.maxHeight
+				broadcaster := s.broadcaster
+				paused := s.isPaused
+				s.mu.Unlock()
 
-					s.mu.Lock()
-					quality := s.jpegQuality
-					maxH := s.maxHeight
-					broadcaster := s.broadcaster
-					paused := s.isPaused
-					s.mu.Unlock()
+				if paused || broadcaster == nil || !broadcaster.HasApprovedViewers() {
+					continue
+				}
 
-					if paused || broadcaster == nil || !broadcaster.HasApprovedViewers() {
-						return
+				imgToEncode := frame.img
+				finalW := frame.width
+				finalH := frame.height
+
+				// Downscale if higher than max configured resolution (e.g. 1080p limit)
+				if maxH > 0 && frame.height > maxH {
+					targetH := maxH
+					targetW := (frame.width * targetH) / frame.height
+					if targetW%2 != 0 {
+						targetW--
 					}
 
-					imgToEncode := frame.img
-					finalW := frame.width
-					finalH := frame.height
-
-					// Downscale if higher than max configured resolution (e.g. 1080p limit)
-					if maxH > 0 && frame.height > maxH {
-						targetH := maxH
-						targetW := (frame.width * targetH) / frame.height
-						if targetW%2 != 0 {
-							targetW--
-						}
-
-						if resizedBuf == nil || lastTargetW != targetW || lastTargetH != targetH {
-							resizedBuf = image.NewRGBA(image.Rect(0, 0, targetW, targetH))
-							lastTargetW = targetW
-							lastTargetH = targetH
-						}
-
-						if rgba, ok := frame.img.(*image.RGBA); ok {
-							fastDownscaleRGBA(rgba, resizedBuf)
-							imgToEncode = resizedBuf
-							finalW = targetW
-							finalH = targetH
-						}
+					if resizedBuf == nil || lastTargetW != targetW || lastTargetH != targetH {
+						resizedBuf = image.NewRGBA(image.Rect(0, 0, targetW, targetH))
+						lastTargetW = targetW
+						lastTargetH = targetH
 					}
 
-					rawJpegBuf.Reset()
-					err := jpeg.Encode(rawJpegBuf, imgToEncode, &jpeg.Options{Quality: quality})
-					if err != nil {
-						return
+					if rgba, ok := frame.img.(*image.RGBA); ok {
+						fastDownscaleRGBA(rgba, resizedBuf)
+						imgToEncode = resizedBuf
+						finalW = targetW
+						finalH = targetH
 					}
-					jpegBytes := rawJpegBuf.Bytes()
+				}
 
-					buf.Reset()
-					fid := atomic.AddUint64(&s.frameID, 1)
-					_ = buf.WriteByte(0x11)
-					_ = binary.Write(buf, binary.BigEndian, fid)
-					_ = binary.Write(buf, binary.BigEndian, uint16(finalW))
-					_ = binary.Write(buf, binary.BigEndian, uint16(finalH))
-					_, _ = buf.Write(jpegBytes)
+				rawJpegBuf.Reset()
+				err := jpeg.Encode(rawJpegBuf, imgToEncode, &jpeg.Options{Quality: quality})
+				if err != nil {
+					continue
+				}
+				jpegBytes := rawJpegBuf.Bytes()
 
-					// Allocate an independent slice copy so asynchronous network write pumps
-					// do not data-race with buf.Reset() on subsequent frames
-					framePayload := make([]byte, buf.Len())
-					copy(framePayload, buf.Bytes())
+				buf.Reset()
+				fid := atomic.AddUint64(&s.frameID, 1)
+				_ = buf.WriteByte(0x11)
+				_ = binary.Write(buf, binary.BigEndian, fid)
+				_ = binary.Write(buf, binary.BigEndian, uint16(finalW))
+				_ = binary.Write(buf, binary.BigEndian, uint16(finalH))
+				_, _ = buf.Write(jpegBytes)
 
-					broadcaster.BroadcastFrame(framePayload)
-				}()
+				broadcaster.BroadcastFrame(buf.Bytes())
 			}
 		}
 	}()
@@ -415,87 +365,80 @@ func (s *Streamer) runPipelinedCapture(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
-			// Safe per-iteration execution: transient capture failure or display sleep will not kill loop
-			func() {
-				defer func() {
-					_ = recover()
-				}()
+			s.mu.Lock()
+			fps := s.targetFPS
+			idx := s.displayIndex
+			broadcaster := s.broadcaster
+			paused := s.isPaused
+			s.mu.Unlock()
 
-				s.mu.Lock()
-				fps := s.targetFPS
-				idx := s.displayIndex
-				broadcaster := s.broadcaster
-				paused := s.isPaused
-				s.mu.Unlock()
+			if paused {
+				time.Sleep(60 * time.Millisecond)
+				continue
+			}
 
-				if paused {
-					time.Sleep(60 * time.Millisecond)
-					return
-				}
+			if fps < 30 {
+				fps = 30
+			}
 
-				if fps < 30 {
-					fps = 30
-				}
+			hasViewers := (broadcaster != nil && broadcaster.HasApprovedViewers())
+			if !hasViewers {
+				time.Sleep(50 * time.Millisecond)
+				continue
+			}
 
-				hasViewers := (broadcaster != nil && broadcaster.HasApprovedViewers())
-				if !hasViewers {
-					time.Sleep(50 * time.Millisecond)
-					return
-				}
+			frameStart := time.Now()
 
-				frameStart := time.Now()
+			num := screenshot.NumActiveDisplays()
+			if num <= 0 {
+				time.Sleep(80 * time.Millisecond)
+				continue
+			}
 
-				num := screenshot.NumActiveDisplays()
-				if num <= 0 {
-					time.Sleep(80 * time.Millisecond)
-					return
-				}
+			if idx < 0 || idx >= num {
+				idx = 0
+			}
 
-				if idx < 0 || idx >= num {
-					idx = 0
-				}
+			bounds := screenshot.GetDisplayBounds(idx)
+			if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
+				time.Sleep(50 * time.Millisecond)
+				continue
+			}
 
-				bounds := screenshot.GetDisplayBounds(idx)
-				if bounds.Dx() <= 0 || bounds.Dy() <= 0 {
-					time.Sleep(50 * time.Millisecond)
-					return
-				}
+			img, err := screenshot.CaptureRect(bounds)
+			if err != nil || img == nil {
+				time.Sleep(15 * time.Millisecond)
+				continue
+			}
 
-				img, err := screenshot.CaptureRect(bounds)
-				if err != nil || img == nil {
-					time.Sleep(25 * time.Millisecond)
-					return
-				}
-
-				// Render mouse cursor if on current display
-				if curX, curY, ok := getCursorPos(); ok {
-					if curX >= bounds.Min.X && curX < bounds.Max.X &&
-						curY >= bounds.Min.Y && curY < bounds.Max.Y {
-						imgW := img.Bounds().Dx()
-						imgH := img.Bounds().Dy()
-						boundW := bounds.Dx()
-						boundH := bounds.Dy()
-						if boundW > 0 && boundH > 0 && imgW > 0 && imgH > 0 {
-							relX := (curX - bounds.Min.X) * imgW / boundW
-							relY := (curY - bounds.Min.Y) * imgH / boundH
-							DrawCursor(img, relX, relY)
-						}
+			// Render mouse cursor if on current display
+			if curX, curY, ok := getCursorPos(); ok {
+				if curX >= bounds.Min.X && curX < bounds.Max.X &&
+					curY >= bounds.Min.Y && curY < bounds.Max.Y {
+					imgW := img.Bounds().Dx()
+					imgH := img.Bounds().Dy()
+					boundW := bounds.Dx()
+					boundH := bounds.Dy()
+					if boundW > 0 && boundH > 0 && imgW > 0 && imgH > 0 {
+						relX := (curX - bounds.Min.X) * imgW / boundW
+						relY := (curY - bounds.Min.Y) * imgH / boundH
+						DrawCursor(img, relX, relY)
 					}
 				}
+			}
 
-				// Non-blocking handoff to encoder worker (drops stale frames immediately if encoder is busy)
-				select {
-				case frameChan <- rawFrame{img: img, width: bounds.Dx(), height: bounds.Dy()}:
-				default:
-				}
+			// Non-blocking handoff to encoder worker (drops stale frames immediately if encoder is busy)
+			select {
+			case frameChan <- rawFrame{img: img, width: bounds.Dx(), height: bounds.Dy()}:
+			default:
+			}
 
-				// Exact framerate pacing
-				targetInterval := time.Duration(1000/fps) * time.Millisecond
-				elapsed := time.Since(frameStart)
-				if elapsed < targetInterval {
-					time.Sleep(targetInterval - elapsed)
-				}
-			}()
+			// Exact framerate pacing
+			targetInterval := time.Duration(1000/fps) * time.Millisecond
+			elapsed := time.Since(frameStart)
+			if elapsed < targetInterval {
+				time.Sleep(targetInterval - elapsed)
+			}
 		}
 	}
 }
