@@ -2,7 +2,8 @@
 set -e
 
 echo "==> Building ScreenLink macOS App..."
-export PATH=$PATH:/opt/homebrew/bin:$HOME/go/bin
+export CGO_CFLAGS="-O2 -g -mmacosx-version-min=14.5"
+export CGO_LDFLAGS="-mmacosx-version-min=14.5"
 wails build -platform darwin/arm64
 
 echo "==> Creating Drag & Drop DMG Installer with /Applications shortcut..."
